@@ -1,4 +1,4 @@
-import type{ FormEvent } from "react";
+import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -10,12 +10,16 @@ interface Resource {
   location: string;
 }
 
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 function Resources() {
   const navigate = useNavigate();
 
   const [resources, setResources] = useState<Resource[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [form, setForm] = useState({
     name: "",
@@ -26,8 +30,10 @@ function Resources() {
 
   const loadResources = async () => {
     try {
+      setLoading(true);
+
       const response = await fetch(
-        "http://localhost:5000/api/resources"
+        `${API_URL}/api/resources`
       );
 
       if (!response.ok) {
@@ -35,9 +41,12 @@ function Resources() {
       }
 
       const data = await response.json();
+
       setResources(data);
     } catch (error) {
-      console.error(error);
+      console.error("Error loading resources:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -49,7 +58,9 @@ function Resources() {
     event.preventDefault();
 
     if (!form.name || !form.category || !form.location) {
-      alert("Please enter name, category and location.");
+      alert(
+        "Please enter resource name, category and location."
+      );
       return;
     }
 
@@ -57,7 +68,7 @@ function Resources() {
 
     try {
       const response = await fetch(
-        "http://localhost:5000/api/resources",
+        `${API_URL}/api/resources`,
         {
           method: "POST",
           headers: {
@@ -75,7 +86,9 @@ function Resources() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to add resource");
+        throw new Error(
+          data.message || "Failed to add resource"
+        );
       }
 
       alert("Resource added successfully!");
@@ -88,9 +101,11 @@ function Resources() {
       });
 
       setShowForm(false);
+
       await loadResources();
     } catch (error) {
-      console.error(error);
+      console.error("Error adding resource:", error);
+
       alert("Failed to add resource.");
     } finally {
       setSaving(false);
@@ -105,11 +120,13 @@ function Resources() {
       `Are you sure you want to delete ${name}?`
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/resources/${id}`,
+        `${API_URL}/api/resources/${id}`,
         {
           method: "DELETE",
         }
@@ -124,22 +141,29 @@ function Resources() {
       }
 
       alert("Resource deleted successfully!");
+
       await loadResources();
     } catch (error) {
-      console.error(error);
+      console.error("Error deleting resource:", error);
+
       alert("Failed to delete resource.");
     }
   };
 
   return (
     <div className="page-container">
+
+      {/* PAGE HEADER */}
       <div className="page-header">
         <div>
           <h1>Resource Management</h1>
-          <p>Manage emergency supplies and resources.</p>
+          <p>
+            Manage emergency supplies and resources.
+          </p>
         </div>
 
         <div className="page-header-actions">
+
           <button
             className="secondary-button"
             onClick={() => navigate("/")}
@@ -151,76 +175,111 @@ function Resources() {
             className="primary-button"
             onClick={() => setShowForm(!showForm)}
           >
-            {showForm ? "✕ Close Form" : "+ Add Resource"}
+            {showForm
+              ? "✕ Close Form"
+              : "+ Add Resource"}
           </button>
+
         </div>
       </div>
 
+      {/* ADD RESOURCE FORM */}
       {showForm && (
         <div className="form-card">
+
           <h2>Add Resource</h2>
 
           <form onSubmit={handleSubmit}>
+
             <div className="form-grid">
+
+              {/* RESOURCE NAME */}
               <div className="form-group">
-                <label>Resource Name *</label>
+
+                <label>
+                  Resource Name *
+                </label>
+
                 <input
                   value={form.name}
                   placeholder="Example: Drinking Water"
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setForm({
                       ...form,
-                      name: e.target.value,
+                      name: event.target.value,
                     })
                   }
                 />
+
               </div>
 
+              {/* CATEGORY */}
               <div className="form-group">
-                <label>Category *</label>
+
+                <label>
+                  Category *
+                </label>
+
                 <input
                   value={form.category}
                   placeholder="Example: Food"
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setForm({
                       ...form,
-                      category: e.target.value,
+                      category: event.target.value,
                     })
                   }
                 />
+
               </div>
 
+              {/* QUANTITY */}
               <div className="form-group">
-                <label>Quantity</label>
+
+                <label>
+                  Quantity
+                </label>
+
                 <input
                   type="number"
+                  min="0"
                   value={form.quantity}
                   placeholder="Example: 100"
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setForm({
                       ...form,
-                      quantity: e.target.value,
+                      quantity: event.target.value,
                     })
                   }
                 />
+
               </div>
 
+              {/* LOCATION */}
               <div className="form-group">
-                <label>Location *</label>
+
+                <label>
+                  Location *
+                </label>
+
                 <input
                   value={form.location}
                   placeholder="Example: Chennai Warehouse"
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setForm({
                       ...form,
-                      location: e.target.value,
+                      location: event.target.value,
                     })
                   }
                 />
+
               </div>
+
             </div>
 
+            {/* FORM BUTTONS */}
             <div className="form-actions">
+
               <button
                 type="button"
                 className="secondary-button"
@@ -234,34 +293,70 @@ function Resources() {
                 className="primary-button"
                 disabled={saving}
               >
-                {saving ? "Saving..." : "Save Resource"}
+                {saving
+                  ? "Saving..."
+                  : "Save Resource"}
               </button>
+
             </div>
+
           </form>
+
         </div>
       )}
 
+      {/* RESOURCE LIST */}
       <div className="content-card">
+
         <div className="content-card-header">
+
           <div>
             <h2>Available Resources</h2>
-            <p>Emergency resource inventory</p>
+
+            <p>
+              Emergency resource inventory
+            </p>
           </div>
 
           <span className="count-badge">
             {resources.length} Resources
           </span>
+
         </div>
 
-        {resources.length === 0 ? (
+        {/* LOADING */}
+        {loading ? (
           <div className="empty-state">
-            <h3>No resources found</h3>
-            <p>Add your first emergency resource above.</p>
+            <h3>Loading resources...</h3>
+            <p>
+              Please wait while resources are loaded.
+            </p>
           </div>
+
+        ) : resources.length === 0 ? (
+
+          /* EMPTY */
+          <div className="empty-state">
+
+            <h3>
+              No resources found
+            </h3>
+
+            <p>
+              Add your first emergency resource above.
+            </p>
+
+          </div>
+
         ) : (
+
+          /* TABLE */
           <div className="table-container">
+
             <table>
+
               <thead>
+
                 <tr>
                   <th>Name</th>
                   <th>Category</th>
@@ -269,22 +364,35 @@ function Resources() {
                   <th>Location</th>
                   <th>Action</th>
                 </tr>
+
               </thead>
 
               <tbody>
+
                 {resources.map((resource) => (
+
                   <tr key={resource.id}>
+
                     <td>
-                      <strong>{resource.name}</strong>
+                      <strong>
+                        {resource.name}
+                      </strong>
                     </td>
 
-                    <td>{resource.category}</td>
-
-                    <td>{resource.quantity}</td>
-
-                    <td>📍 {resource.location}</td>
+                    <td>
+                      {resource.category}
+                    </td>
 
                     <td>
+                      {resource.quantity}
+                    </td>
+
+                    <td>
+                      📍 {resource.location}
+                    </td>
+
+                    <td>
+
                       <button
                         className="delete-button"
                         onClick={() =>
@@ -296,14 +404,23 @@ function Resources() {
                       >
                         Delete
                       </button>
+
                     </td>
+
                   </tr>
+
                 ))}
+
               </tbody>
+
             </table>
+
           </div>
+
         )}
+
       </div>
+
     </div>
   );
 }
