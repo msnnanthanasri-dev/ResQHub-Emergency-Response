@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Dashboard from "./pages/Dashboard";
 import Emergencies from "./pages/Emergencies";
@@ -14,15 +15,30 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/emergencies" element={<Emergencies />} />
-        <Route path="/volunteers" element={<Volunteers />} />
-        <Route path="/camps" element={<ReliefCamps />} />
-        <Route path="/resources" element={<Resources />} />
-        <Route path="/map" element={<Map />} />
-        <Route path="/alerts" element={<Alerts />} />
+
+        {/* Login */}
         <Route path="/login" element={<Login />} />
+
+        {/* Main application */}
+        <Route path="/" element={<Dashboard />} />
+
+        <Route path="/emergencies" element={<Emergencies />} />
+
+        <Route path="/volunteers" element={<Volunteers />} />
+
+        <Route path="/camps" element={<ReliefCamps />} />
+
+        <Route path="/resources" element={<Resources />} />
+
+        <Route path="/map" element={<Map />} />
+
+        <Route path="/alerts" element={<Alerts />} />
+
         <Route path="/settings" element={<Settings />} />
+
+        {/* Unknown URL */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+
       </Routes>
     </BrowserRouter>
   );
