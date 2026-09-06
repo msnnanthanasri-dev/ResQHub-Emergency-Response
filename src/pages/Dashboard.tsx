@@ -1,982 +1,3304 @@
+
 import { useEffect, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+
+interface Emergency {
+  id: number;
+  title: string;
+  description: string;
+  location: string;
+  severity: string;
+  status: string;
+}
+
+interface Volunteer {
+  id: number;
+  name: string;
+  skill: string;
+  location: string;
+  phone: string | null;
+  status: string;
+  assignment: string | null;
+}
+
+interface ReliefCamp {
+  id: number;
+  name: string;
+  location: string;
+  capacity: number;
+  current_people: number;
+  status: string;
+}
+
+interface Resource {
+  id: number;
+  name: string;
+  category: string;
+  quantity: number;
+  location: string;
+}
 
 interface Alert {
   id: number;
   title: string;
   message: string;
   severity: string;
-  location: string | null;
-  created_at: string;
-}
-
-interface EmergencyReport {
-  id: number;
-  user_id: number | null;
-  title: string;
-  description: string | null;
-  location: string | null;
-  latitude: string | null;
-  longitude: string | null;
-  severity: string;
-  status: string;
-  created_at: string;
+  location: string;
 }
 
 function Dashboard() {
   const navigate = useNavigate();
 
+  const [emergencies, setEmergencies] = useState<Emergency[]>([]);
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [camps, setCamps] = useState<ReliefCamp[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [emergencies, setEmergencies] = useState<EmergencyReport[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [alertsLoading, setAlertsLoading] = useState(true);
 
-  // =========================
-  // LOAD DASHBOARD DATA
-  // =========================
+  const API_URL =
+    import.meta.env.VITE_API_URL || "http://localhost:5000";
+
   useEffect(() => {
-    // Load emergencies
-    fetch("http://localhost:5000/api/emergency-reports")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch emergencies");
-        }
-
-        return response.json();
-      })
-      .then((data) => {
-        setEmergencies(data);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error loading emergencies:", error);
-        setLoading(false);
-      });
-
-    // Load alerts
-    fetch("http://localhost:5000/api/alerts")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch alerts");
-        }
-
-        return response.json();
-      })
-      .then((data) => {
-        // Show only the latest 3 alerts on dashboard
-        setAlerts(data.slice(0, 3));
-        setAlertsLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error loading alerts:", error);
-        setAlertsLoading(false);
-      });
+    loadDashboardData();
   }, []);
 
-  // =========================
-  // EMERGENCY CALCULATIONS
-  // =========================
-  const activeEmergencies = emergencies.filter(
-    (emergency) =>
-      emergency.status?.toLowerCase() === "active" ||
-      emergency.status?.toLowerCase() === "pending"
+  const loadDashboardData = async () => {
+    try {
+      const [
+        emergenciesResponse,
+        volunteersResponse,
+        campsResponse,
+        resourcesResponse,
+        alertsResponse,
+      ] = await Promise.all([
+        fetch(`${API_URL}/api/emergency-reports`),
+        fetch(`${API_URL}/api/volunteers`),
+        fetch(`${API_URL}/api/relief-camps`),
+        fetch(`${API_URL}/api/resources`),
+        fetch(`${API_URL}/api/alerts`),
+      ]);
+
+      if (emergenciesResponse.ok) {
+        setEmergencies(await emergenciesResponse.json());
+      }
+
+      if (volunteersResponse.ok) {
+        setVolunteers(await volunteersResponse.json());
+      }
+
+      if (campsResponse.ok) {
+        setCamps(await campsResponse.json());
+      }
+
+      if (resourcesResponse.ok) {
+        setResources(await resourcesResponse.json());
+      }
+
+      if (alertsResponse.ok) {
+        setAlerts(await alertsResponse.json());
+      }
+    } catch (error) {
+      console.error("Dashboard loading error:", error);
+    }
+  };
+
+  /*
+   * Find the highest alert severity.
+   *
+   * Critical > High > Medium > Low > Info
+   */
+  const getHighestAlertSeverity = () => {
+    if (alerts.length === 0) {
+      return "";
+    }
+
+    const severityRank: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+
+    let highestSeverity = "info";
+    let highestRank = 0;
+
+    alerts.forEach((alert) => {
+      const severity = String(alert.severity || "info").toLowerCase();
+      const rank = severityRank[severity] || 1;
+
+      if (rank > highestRank) {
+        highestRank = rank;
+        highestSeverity = severity;
+      }
+    });
+
+    return highestSeverity;
+  };
+
+  const highestSeverity = getHighestAlertSeverity();
+
+  const getAlertButtonClass = () => {
+    if (highestSeverity === "critical") {
+      return "alert-button alert-critical";
+    }
+
+    if (highestSeverity === "high") {
+      return "alert-button alert-high";
+    }
+
+    if (highestSeverity === "medium") {
+      return "alert-button alert-medium";
+    }
+
+    if (highestSeverity === "low") {
+      return "alert-button alert-low";
+    }
+
+    if (highestSeverity === "info") {
+      return "alert-button alert-info";
+    }
+
+    return "alert-button";
+  };
+
+  const totalResourceQuantity = resources.reduce(
+    (total, resource) => total + Number(resource.quantity || 0),
+    0
   );
 
-  const criticalEmergencies = emergencies.filter(
-    (emergency) =>
-      emergency.severity?.toLowerCase() === "critical"
-  );
+ const totalVolunteers = volunteers.length;
 
-  // =========================
-  // SEVERITY HELPERS
-  // =========================
-  const getSeverityClass = (severity: string) => {
-    const value = severity?.toLowerCase();
+  const availableVolunteers = volunteers.filter(
+    (volunteer) => String(volunteer.status || " ").toLowerCase() === "available"
+  ).length;
 
-    if (value === "critical") return "critical";
-    if (value === "high") return "high";
-    if (value === "medium") return "medium";
-    if (value === "low") return "low";
-
-    return "medium";
-  };
-
-  const getSeverityLabel = (severity: string) => {
-    if (!severity) return "Medium";
-
-    return (
-      severity.charAt(0).toUpperCase() +
-      severity.slice(1)
-    );
-  };
-
-  // =========================
-  // STATUS HELPERS
-  // =========================
-  const getStatusClass = (status: string) => {
-    const value = status?.toLowerCase();
-
-    if (value === "active") return "active-status";
-    if (value === "responding") return "responding";
-    if (value === "resolved") return "resolved";
-    if (value === "pending") return "pending";
-
-    return "active-status";
-  };
-
-  const getStatusLabel = (status: string) => {
-    if (!status) return "Pending";
-
-    return (
-      status.charAt(0).toUpperCase() +
-      status.slice(1)
-    );
-  };
-
-  // =========================
-  // ALERT HELPERS
-  // =========================
-  const getAlertClass = (severity: string) => {
-    const value = severity?.toLowerCase();
-
-    if (value === "critical") return "critical";
-    if (value === "warning") return "warning";
-    if (value === "high") return "high";
-
-    return "info";
-  };
+  const activeCamps = camps.filter(
+    (camp) => String(camp.status).toLowerCase() === "active"
+  ).length;
 
   return (
-    <div className="app">
+    <>
+      <style>
+        {`
+          *{
+            box-sizing: border-box;
+          }
 
-      {/* =========================
-          SIDEBAR
-      ========================== */}
+          body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f8fafc;
+          }
 
-      <aside className="sidebar">
+          .dashboard-page {
+            min-height: 100vh;
+            background:
+              linear-gradient(
+                135deg,
+                #f8fafc 0%,
+                #eef6ff 50%,
+                #f8fafc 100%
+              );
+            color: #0f172a;
+            overflow-x: hidden;
+          }
 
-        <div className="logo">
-          <div className="logo-icon">R</div>
+          .dashboard-header {
+            background: rgba(255,255,255,0.96);
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px clamp(14px, 4vw, 40px);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(12px);
+          }
 
-          <div>
-            <h2>ResQHub</h2>
-            <span>Emergency Response</span>
-          </div>
-        </div>
+          .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+          }
 
-        <nav>
+          .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+          }
 
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+          .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 22px;
+            flex-shrink: 0;
+          }
+
+          .brand-title {
+            font-size: clamp(18px, 3vw, 23px);
+            font-weight: 800;
+            color: #0f172a;
+          }
+
+          .brand-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+          }
+
+          .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+
+          /*
+           * NORMAL ALERT BUTTON
+           */
+          .alert-button {
+            border: 1px solid #cbd5e1;
+            background: white;
+            color: #0f172a;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s ease;
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+          }
+
+          .alert-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(15,23,42,0.12);
+          }
+
+          /*
+           * ONLY THE ALERTS BUTTON FLASHES.
+           */
+
+          .alert-critical {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #b91c1c;
+            animation: criticalAlert 1s ease-in-out infinite;
+          }
+
+          .alert-high {
+            background: #ffedd5;
+            border-color: #f97316;
+            color: #c2410c;
+            animation: highAlert 1.4s ease-in-out infinite;
+          }
+
+          .alert-medium {
+            background: #fef9c3;
+            border-color: #eab308;
+            color: #a16207;
+            animation: mediumAlert 1.8s ease-in-out infinite;
+          }
+
+          .alert-low {
+            background: #dcfce7;
+            border-color: #22c55e;
+            color: #15803d;
+            animation: lowAlert 2.4s ease-in-out infinite;
+          }
+
+          .alert-info {
+            background: #dbeafe;
+            border-color: #3b82f6;
+            color: #1d4ed8;
+            animation: infoAlert 3s ease-in-out infinite;
+          }
+
+          /*
+           * The animation changes ONLY this button's
+           * shadow/background.
+           */
+
+          @keyframes criticalAlert {
+            0%, 100% {
+              background: #fee2e2;
+              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.15);
             }
-          >
-            Dashboard
-          </NavLink>
 
-          <NavLink
-            to="/emergencies"
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+            50% {
+              background: #fecaca;
+              box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.12);
             }
-          >
-            Emergency Reports
-          </NavLink>
+          }
 
-          <NavLink
-            to="/volunteers"
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+          @keyframes highAlert {
+            0%, 100% {
+              background: #ffedd5;
+              box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.12);
             }
-          >
-            Volunteers
-          </NavLink>
 
-          <NavLink
-            to="/camps"
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+            50% {
+              background: #fed7aa;
+              box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.10);
             }
-          >
-            Relief Camps
-          </NavLink>
+          }
 
-          <NavLink
-            to="/resources"
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+          @keyframes mediumAlert {
+            0%, 100% {
+              background: #fef9c3;
+              box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.10);
             }
-          >
-            Resources
-          </NavLink>
 
-          <NavLink
-            to="/map"
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+            50% {
+              background: #fef08a;
+              box-shadow: 0 0 0 5px rgba(234, 179, 8, 0.08);
             }
-          >
-            GIS Map
-          </NavLink>
+          }
 
-          <NavLink
-            to="/alerts"
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+          @keyframes lowAlert {
+            0%, 100% {
+              background: #dcfce7;
+              box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.08);
             }
-          >
-            Alerts
-          </NavLink>
 
-        </nav>
-
-        <div className="sidebar-bottom">
-
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              isActive ? "active" : ""
+            50% {
+              background: #bbf7d0;
+              box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.07);
             }
-          >
-            Settings
-          </NavLink>
+          }
 
-          <NavLink to="/login">
-            Logout
-          </NavLink>
+          @keyframes infoAlert {
+            0%, 100% {
+              background: #dbeafe;
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.07);
+            }
 
-        </div>
+            50% {
+              background: #bfdbfe;
+              box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.06);
+            }
+          }
 
-      </aside>
+          /*
+           * If the device requests reduced motion,
+           * stop the flashing animation.
+           */
+          @media (prefers-reduced-motion: reduce) {
+            .alert-critical,
+            .alert-high,
+            .alert-medium,
+            .alert-low,
+            .alert-info {
+              animation: none;
+            }
+          }
 
+          .signin-button {
+            border: none;
+            background: #0f172a;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+          }
 
-      {/* =========================
-          MAIN CONTENT
-      ========================== */}
+          .main-content {
+            width: min(1400px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+          }
 
-      <main className="main">
+          .welcome-section {
+            margin-bottom: 24px;
+          }
 
+          .welcome-title {
+            margin: 0;
+            font-size: clamp(26px, 5vw, 38px);
+            font-weight: 850;
+          }
+
+          .welcome-text {
+            margin: 8px 0 0;
+            color: #64748b;
+            font-size: 15px;
+          }
+
+          .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+          }
+
+          .stat-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .stat-label {
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 700;
+          }
+
+          .stat-value {
+            font-size: 32px;
+            font-weight: 850;
+            margin-top: 8px;
+          }
+
+          .quick-section {
+            margin-bottom: 28px;
+          }
+
+          .section-title {
+            margin: 0 0 14px;
+            font-size: 21px;
+            font-weight: 800;
+          }
+
+          .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .quick-button {
+            border: none;
+            border-radius: 16px;
+            padding: 18px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.05);
+            cursor: pointer;
+            text-align: left;
+            font-weight: 800;
+            color: #0f172a;
+            transition: 0.2s ease;
+          }
+
+          .quick-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 25px rgba(15,23,42,0.1);
+          }
+
+          .quick-icon {
+            font-size: 26px;
+            display: block;
+            margin-bottom: 10px;
+          }
+
+          .emergency-section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .emergency-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .emergency-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+          }
+
+          .emergency-title {
+            font-weight: 800;
+            margin-bottom: 5px;
+          }
+
+          .emergency-location {
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          .severity-badge {
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            white-space: nowrap;
+          }
+
+          .critical {
+            background: #fee2e2;
+            color: #b91c1c;
+          }
+
+          .high {
+            background: #ffedd5;
+            color: #c2410c;
+          }
+
+          .medium {
+            background: #fef9c3;
+            color: #a16207;
+          }
+
+          .low {
+            background: #dcfce7;
+            color: #15803d;
+          }
+
+          .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #64748b;
+          }
+
+          .footer {
+            text-align: center;
+            padding: 25px 15px;
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          @media (max-width: 1000px) {
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 650px) {
+            .dashboard-header {
+              padding: 10px 12px;
+            }
+
+            .header-inner {
+              align-items: flex-start;
+            }
+
+            .header-actions {
+              width: 100%;
+            }
+
+            .alert-button,
+            .signin-button {
+              flex: 1;
+              justify-content: center;
+            }
+
+            .main-content {
+              width: min(100% - 20px, 1400px);
+              padding-top: 20px;
+            }
+
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .stat-card {
+              padding: 17px;
+            }
+
+            .emergency-card {
+              align-items: flex-start;
+              flex-direction: column;
+            }
+          }
+        `}
+      </style>
+
+      <div className="dashboard-page">
         {/* HEADER */}
-
-        <header className="header">
-
-          <div>
-            <h1>Dashboard</h1>
-            <p>Emergency response overview</p>
-          </div>
-
-          <div className="admin">
-
-            <NavLink
-              to="/alerts"
-              className="notification"
-            >
-              🔔
-              {alerts.length > 0 && (
-                <span className="notification-badge">
-                  {alerts.length}
-                </span>
-              )}
-            </NavLink>
-
-            <NavLink
-              to="/login"
-              className="admin-profile"
-            >
-
-              <div className="avatar">
-                A
-              </div>
+        <header className="dashboard-header">
+          <div className="header-inner">
+            <div className="brand">
+              <div className="brand-icon">🚨</div>
 
               <div>
-                <strong>Administrator</strong>
-                <small>Emergency Authority</small>
+                <div className="brand-title">ResQHub</div>
+                <div className="brand-subtitle">
+                  Emergency Response Management
+                </div>
               </div>
+            </div>
 
-            </NavLink>
+            <div className="header-actions">
+              <button
+                className={getAlertButtonClass()}
+                onClick={() => navigate("/alerts")}
+              >
+                🔔 Alerts
 
+                {alerts.length > 0 && (
+                  <span
+                    style={{
+                      background: "currentColor",
+                      color: "white",
+                      minWidth: "22px",
+                      height: "22px",
+                      borderRadius: "999px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                className="signin-button"
+                onClick={() => navigate("/login")}
+              >
+                🔐 Sign In
+              </button>
+            </div>
           </div>
-
         </header>
 
+        {/* MAIN */}
+        <main className="main-content">
+          <section className="welcome-section">
+            <h1 className="welcome-title">Emergency Dashboard</h1>
 
-        {/* =========================
-            STATISTICS
-        ========================== */}
+            <p className="welcome-text">
+              Monitor emergencies, volunteers, relief camps, resources and
+              alerts from one place.
+            </p>
+          </section>
 
-        <section className="stats">
-
-          {/* Emergency */}
-
-          <div className="stat-card">
-
-            <div>
-
-              <span>Active Emergencies</span>
-
-              <h2>
-                {loading
-                  ? "..."
-                  : activeEmergencies.length}
-              </h2>
-
-              <small>
-                {criticalEmergencies.length} critical incidents
-              </small>
-
+          {/* STATS */}
+          <section className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">🚨 Emergencies</div>
+              <div className="stat-value">{emergencies.length}</div>
             </div>
 
-            <div className="stat-icon emergency">
-              🚨
+            <div className="stat-card">
+  <div className="stat-label">👥 Total Volunteers</div>
+
+  <div className="stat-value">
+    {totalVolunteers}
+  </div>
+
+  <div
+    style={{
+      marginTop: "6px",
+      fontSize: "13px",
+      color: "#16a34a",
+      fontWeight: 700,
+    }}
+  >
+    ✅ {availableVolunteers} Available
+  </div>
+</div>
+
+            <div className="stat-card">
+              <div className="stat-label">🏕️ Active Relief Camps</div>
+              <div className="stat-value">{activeCamps}</div>
             </div>
 
-          </div>
-
-
-          {/* Volunteers */}
-
-          <div className="stat-card">
-
-            <div>
-
-              <span>Available Volunteers</span>
-
-              <h2>48</h2>
-
-              <small>
-                8 currently responding
-              </small>
-
+            <div className="stat-card">
+              <div className="stat-label">📦 Resource Quantity</div>
+              <div className="stat-value">{totalResourceQuantity}</div>
             </div>
+          </section>
 
-            <div className="stat-icon volunteer">
-              👥
+          {/* QUICK ACTIONS */}
+          <section className="quick-section">
+            <h2 className="section-title">Quick Actions</h2>
+
+            <div className="quick-grid">
+              <button
+                className="quick-button"
+                onClick={() => navigate("/emergencies")}
+              >
+                <span className="quick-icon">🚨</span>
+                Manage Emergencies
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/volunteers")}
+              >
+                <span className="quick-icon">👥</span>
+                Manage Volunteers
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/camps")}
+              >
+                <span className="quick-icon">🏕️</span>
+                Relief Camps
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/resources")}
+              >
+                <span className="quick-icon">📦</span>
+                Resources
+              </button>
             </div>
+          </section>
 
-          </div>
+          {/* RECENT EMERGENCIES */}
+          <section className="emergency-section">
+            <h2 className="section-title">Recent Emergencies</h2>
 
+            {emergencies.length === 0 ? (
+              <div className="empty-state">
+                No emergency reports available.
+              </div>
+            ) : (
+              <div className="emergency-list">
+                {emergencies.slice(0, 5).map((emergency) => {
+                  const severity = String(
+                    emergency.severity || "medium"
+                  ).toLowerCase();
 
-          {/* Camps */}
+                  return (
+                    <div className="emergency-card" key={emergency.id}>
+                      <div>
+                        <div className="emergency-title">
+                          {emergency.title}
+                        </div>
 
-          <div className="stat-card">
-
-            <div>
-
-              <span>Relief Camps</span>
-
-              <h2>8</h2>
-
-              <small>
-                2 nearly full
-              </small>
-
-            </div>
-
-            <div className="stat-icon camp">
-              🏕️
-            </div>
-
-          </div>
-
-
-          {/* Resources */}
-
-          <div className="stat-card">
-
-            <div>
-
-              <span>Resources</span>
-
-              <h2>1,250</h2>
-
-              <small>
-                15 items low in stock
-              </small>
-
-            </div>
-
-            <div className="stat-icon resource">
-              📦
-            </div>
-
-          </div>
-
-        </section>
-
-
-        {/* =========================
-            🚨 ALERTS
-        ========================== */}
-
-        <section className="panel alerts-panel">
-
-          <div className="panel-header">
-
-            <div>
-
-              <h2>🚨 Emergency Alerts</h2>
-
-              <p>
-                Latest emergency notifications
-              </p>
-
-            </div>
-
-            <button
-              onClick={() => navigate("/alerts")}
-            >
-              View All
-            </button>
-
-          </div>
-
-
-          {alertsLoading ? (
-
-            <div className="empty-state">
-              Loading alerts...
-            </div>
-
-          ) : alerts.length === 0 ? (
-
-            <div className="empty-state">
-
-              <h3>No active alerts</h3>
-
-              <p>
-                There are currently no emergency alerts.
-              </p>
-
-            </div>
-
-          ) : (
-
-            <div className="dashboard-alerts">
-
-              {alerts.map((alert) => (
-
-                <div
-                  className={`dashboard-alert ${getAlertClass(
-                    alert.severity
-                  )}`}
-                  key={alert.id}
-                >
-
-                  <div className="alert-content">
-
-                    <div className="alert-title-row">
-
-                      <strong>
-                        {alert.title}
-                      </strong>
+                        <div className="emergency-location">
+                          📍 {emergency.location || "Location unavailable"}
+                        </div>
+                      </div>
 
                       <span
-                        className={`badge ${getAlertClass(
-                          alert.severity
-                        )}`}
+                        className={`severity-badge ${
+                          severity === "critical"
+                            ? "critical"
+                            : severity === "high"
+                            ? "high"
+                            : severity === "low"
+                            ? "low"
+                            : "medium"
+                        }`}
                       >
-                        {getSeverityLabel(
-                          alert.severity
-                        )}
+                        {severity}
                       </span>
-
                     </div>
-
-                    <p>
-                      {alert.message}
-                    </p>
-
-                    {alert.location && (
-                      <small>
-                        📍 {alert.location}
-                      </small>
-                    )}
-
-                  </div>
-
-                </div>
-
-              ))}
-
-            </div>
-
-          )}
-
-        </section>
-
-
-        {/* =========================
-            DASHBOARD GRID
-        ========================== */}
-
-        <section className="dashboard-grid">
-
-          {/* =========================
-              RECENT EMERGENCIES
-          ========================== */}
-
-          <div className="panel emergency-panel">
-
-            <div className="panel-header">
-
-              <div>
-
-                <h2>Recent Emergencies</h2>
-
-                <p>
-                  Latest reported incidents
-                </p>
-
+                  );
+                })}
               </div>
-
-              <button
-                onClick={() =>
-                  navigate("/emergencies")
-                }
-              >
-                View All
-              </button>
-
-            </div>
-
-
-            <div className="table-container">
-
-              <table>
-
-                <thead>
-
-                  <tr>
-                    <th>Emergency</th>
-                    <th>Location</th>
-                    <th>Severity</th>
-                    <th>Status</th>
-                  </tr>
-
-                </thead>
-
-
-                <tbody>
-
-                  {loading ? (
-
-                    <tr>
-
-                      <td colSpan={4}>
-                        Loading emergencies...
-                      </td>
-
-                    </tr>
-
-                  ) : emergencies.length === 0 ? (
-
-                    <tr>
-
-                      <td colSpan={4}>
-                        No emergency reports found.
-                      </td>
-
-                    </tr>
-
-                  ) : (
-
-                    emergencies
-                      .slice(0, 5)
-                      .map((emergency) => (
-
-                        <tr key={emergency.id}>
-
-                          <td>
-
-                            <strong>
-                              {emergency.title}
-                            </strong>
-
-                            <small>
-                              EMG-
-                              {String(
-                                emergency.id
-                              ).padStart(3, "0")}
-                            </small>
-
-                          </td>
-
-                          <td>
-                            {emergency.location ||
-                              "Unknown"}
-                          </td>
-
-                          <td>
-
-                            <span
-                              className={`badge ${getSeverityClass(
-                                emergency.severity
-                              )}`}
-                            >
-                              {getSeverityLabel(
-                                emergency.severity
-                              )}
-                            </span>
-
-                          </td>
-
-                          <td>
-
-                            <span
-                              className={`status ${getStatusClass(
-                                emergency.status
-                              )}`}
-                            >
-                              {getStatusLabel(
-                                emergency.status
-                              )}
-                            </span>
-
-                          </td>
-
-                        </tr>
-
-                      ))
-
-                  )}
-
-                </tbody>
-
-              </table>
-
-            </div>
-
-          </div>
-
-
-          {/* =========================
-              VOLUNTEER STATUS
-          ========================== */}
-
-          <div className="panel">
-
-            <div className="panel-header">
-
-              <div>
-
-                <h2>Volunteer Status</h2>
-
-                <p>
-                  Current availability
-                </p>
-
-              </div>
-
-              <button
-                onClick={() =>
-                  navigate("/volunteers")
-                }
-              >
-                Manage
-              </button>
-
-            </div>
-
-
-            <div className="progress-item">
-
-              <div>
-                <span>Available</span>
-                <strong>48</strong>
-              </div>
-
-              <div className="progress">
-
-                <div
-                  className="progress-bar available"
-                  style={{ width: "62%" }}
-                />
-
-              </div>
-
-            </div>
-
-
-            <div className="progress-item">
-
-              <div>
-                <span>Responding</span>
-                <strong>18</strong>
-              </div>
-
-              <div className="progress">
-
-                <div
-                  className="progress-bar responding-bar"
-                  style={{ width: "35%" }}
-                />
-
-              </div>
-
-            </div>
-
-
-            <div className="progress-item">
-
-              <div>
-                <span>Unavailable</span>
-                <strong>12</strong>
-              </div>
-
-              <div className="progress">
-
-                <div
-                  className="progress-bar unavailable"
-                  style={{ width: "20%" }}
-                />
-
-              </div>
-
-            </div>
-
-          </div>
-
-
-          {/* =========================
-              RELIEF CAMPS
-          ========================== */}
-
-          <div className="panel">
-
-            <div className="panel-header">
-
-              <div>
-
-                <h2>Relief Camps</h2>
-
-                <p>
-                  Camp occupancy
-                </p>
-
-              </div>
-
-              <button
-                onClick={() =>
-                  navigate("/camps")
-                }
-              >
-                View All
-              </button>
-
-            </div>
-
-
-            <div className="camp-item">
-
-              <div>
-
-                <strong>
-                  Camp Alpha
-                </strong>
-
-                <span>
-                  320 / 500 people
-                </span>
-
-              </div>
-
-              <span className="camp-open">
-                Open
-              </span>
-
-            </div>
-
-
-            <div className="camp-item">
-
-              <div>
-
-                <strong>
-                  Camp Beta
-                </strong>
-
-                <span>
-                  460 / 500 people
-                </span>
-
-              </div>
-
-              <span className="camp-warning">
-                Almost Full
-              </span>
-
-            </div>
-
-
-            <div className="camp-item">
-
-              <div>
-
-                <strong>
-                  Camp Gamma
-                </strong>
-
-                <span>
-                  180 / 400 people
-                </span>
-
-              </div>
-
-              <span className="camp-open">
-                Open
-              </span>
-
-            </div>
-
-          </div>
-
-
-          {/* =========================
-              RESOURCES
-          ========================== */}
-
-          <div className="panel">
-
-            <div className="panel-header">
-
-              <div>
-
-                <h2>Resource Inventory</h2>
-
-                <p>
-                  Current stock levels
-                </p>
-
-              </div>
-
-              <button
-                onClick={() =>
-                  navigate("/resources")
-                }
-              >
-                Manage
-              </button>
-
-            </div>
-
-
-            <div className="resource-item">
-              <span>🍚 Food</span>
-              <strong>620 units</strong>
-            </div>
-
-            <div className="resource-item">
-              <span>💧 Drinking Water</span>
-              <strong>380 units</strong>
-            </div>
-
-            <div className="resource-item">
-              <span>💊 Medicines</span>
-              <strong>150 units</strong>
-            </div>
-
-            <div className="resource-item">
-              <span>🛏️ Blankets</span>
-              <strong>100 units</strong>
-            </div>
-
-          </div>
-
-
-          {/* =========================
-              QUICK ACTIONS
-          ========================== */}
-
-          <div className="panel quick-actions-panel">
-
-            <div className="panel-header">
-
-              <div>
-
-                <h2>Quick Actions</h2>
-
-                <p>
-                  Emergency response management
-                </p>
-
-              </div>
-
-            </div>
-
-
-            <div className="quick-actions">
-
-              <button
-                onClick={() =>
-                  navigate("/emergencies")
-                }
-              >
-                🚨
-                <span>
-                  Add Emergency
-                </span>
-              </button>
-
-
-              <button
-                onClick={() =>
-                  navigate("/volunteers")
-                }
-              >
-                👥
-                <span>
-                  Add Volunteer
-                </span>
-              </button>
-
-
-              <button
-                onClick={() =>
-                  navigate("/camps")
-                }
-              >
-                🏕️
-                <span>
-                  Add Relief Camp
-                </span>
-              </button>
-
-
-              <button
-                onClick={() =>
-                  navigate("/resources")
-                }
-              >
-                📦
-                <span>
-                  Add Resource
-                </span>
-              </button>
-
-
-              <button
-                onClick={() =>
-                  navigate("/alerts")
-                }
-              >
-                🔔
-                <span>
-                  Add Alert
-                </span>
-              </button>
-
-            </div>
-
-          </div>
-
-        </section>
-
-      </main>
-
-    </div>
+            )}
+          </section>
+        </main>
+
+        <footer className="footer">
+          © 2026 ResQHub — Emergency Response Management Platform
+        </footer>
+      </div>
+    </>
   );
 }
 
 export default Dashboard;
+
+
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+interface Emergency {
+  id: number;
+  title: string;
+  description: string;
+  location: string;
+  severity: string;
+  status: string;
+}
+
+interface Volunteer {
+  id: number;
+  name: string;
+  skill: string;
+  location: string;
+  phone: string | null;
+  status: string;
+  assignment: string | null;
+}
+
+interface ReliefCamp {
+  id: number;
+  name: string;
+  location: string;
+  capacity: number;
+  current_people: number;
+  status: string;
+}
+
+interface Resource {
+  id: number;
+  name: string;
+  category: string;
+  quantity: number;
+  location: string;
+}
+
+interface Alert {
+  id: number;
+  title: string;
+  message: string;
+  severity: string;
+  location: string;
+}
+
+function Dashboard() {
+  const navigate = useNavigate();
+
+  const [emergencies, setEmergencies] = useState<Emergency[]>([]);
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [camps, setCamps] = useState<ReliefCamp[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+
+  const API_URL =
+    import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const [
+        emergenciesResponse,
+        volunteersResponse,
+        campsResponse,
+        resourcesResponse,
+        alertsResponse,
+      ] = await Promise.all([
+        fetch(`${API_URL}/api/emergency-reports`),
+        fetch(`${API_URL}/api/volunteers`),
+        fetch(`${API_URL}/api/relief-camps`),
+        fetch(`${API_URL}/api/resources`),
+        fetch(`${API_URL}/api/alerts`),
+      ]);
+
+      if (emergenciesResponse.ok) {
+        setEmergencies(await emergenciesResponse.json());
+      }
+
+      if (volunteersResponse.ok) {
+        setVolunteers(await volunteersResponse.json());
+      }
+
+      if (campsResponse.ok) {
+        setCamps(await campsResponse.json());
+      }
+
+      if (resourcesResponse.ok) {
+        setResources(await resourcesResponse.json());
+      }
+
+      if (alertsResponse.ok) {
+        setAlerts(await alertsResponse.json());
+      }
+    } catch (error) {
+      console.error("Dashboard loading error:", error);
+    }
+  };
+
+  /*
+   * Find the highest alert severity.
+   *
+   * Critical > High > Medium > Low > Info
+   */
+  const getHighestAlertSeverity = () => {
+    if (alerts.length === 0) {
+      return "";
+    }
+
+    const severityRank: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+
+    let highestSeverity = "info";
+    let highestRank = 0;
+
+    alerts.forEach((alert) => {
+      const severity = String(alert.severity || "info").toLowerCase();
+      const rank = severityRank[severity] || 1;
+
+      if (rank > highestRank) {
+        highestRank = rank;
+        highestSeverity = severity;
+      }
+    });
+
+    return highestSeverity;
+  };
+
+  const highestSeverity = getHighestAlertSeverity();
+
+  const getAlertButtonClass = () => {
+    if (highestSeverity === "critical") {
+      return "alert-button alert-critical";
+    }
+
+    if (highestSeverity === "high") {
+      return "alert-button alert-high";
+    }
+
+    if (highestSeverity === "medium") {
+      return "alert-button alert-medium";
+    }
+
+    if (highestSeverity === "low") {
+      return "alert-button alert-low";
+    }
+
+    if (highestSeverity === "info") {
+      return "alert-button alert-info";
+    }
+
+    return "alert-button";
+  };
+
+  const totalResourceQuantity = resources.reduce(
+    (total, resource) => total + Number(resource.quantity || 0),
+    0
+  );
+
+ const totalVolunteers = volunteers.length;
+
+  const availableVolunteers = volunteers.filter(
+    (volunteer) => String(volunteer.status || " ").toLowerCase() === "available"
+  ).length;
+
+  const activeCamps = camps.filter(
+    (camp) => String(camp.status).toLowerCase() === "active"
+  ).length;
+
+  return (
+    <>
+      <style>
+        {`
+          *{
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f8fafc;
+          }
+
+          .dashboard-page {
+            min-height: 100vh;
+            background:
+              linear-gradient(
+                135deg,
+                #f8fafc 0%,
+                #eef6ff 50%,
+                #f8fafc 100%
+              );
+            color: #0f172a;
+            overflow-x: hidden;
+          }
+
+          .dashboard-header {
+            background: rgba(255,255,255,0.96);
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px clamp(14px, 4vw, 40px);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(12px);
+          }
+
+          .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+          }
+
+          .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+          }
+
+          .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 22px;
+            flex-shrink: 0;
+          }
+
+          .brand-title {
+            font-size: clamp(18px, 3vw, 23px);
+            font-weight: 800;
+            color: #0f172a;
+          }
+
+          .brand-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+          }
+
+          .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+
+          /*
+           * NORMAL ALERT BUTTON
+           */
+          .alert-button {
+            border: 1px solid #cbd5e1;
+            background: white;
+            color: #0f172a;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s ease;
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+          }
+
+          .alert-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(15,23,42,0.12);
+          }
+
+          /*
+           * ONLY THE ALERTS BUTTON FLASHES.
+           */
+
+          .alert-critical {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #b91c1c;
+            animation: criticalAlert 1s ease-in-out infinite;
+          }
+
+          .alert-high {
+            background: #ffedd5;
+            border-color: #f97316;
+            color: #c2410c;
+            animation: highAlert 1.4s ease-in-out infinite;
+          }
+
+          .alert-medium {
+            background: #fef9c3;
+            border-color: #eab308;
+            color: #a16207;
+            animation: mediumAlert 1.8s ease-in-out infinite;
+          }
+
+          .alert-low {
+            background: #dcfce7;
+            border-color: #22c55e;
+            color: #15803d;
+            animation: lowAlert 2.4s ease-in-out infinite;
+          }
+
+          .alert-info {
+            background: #dbeafe;
+            border-color: #3b82f6;
+            color: #1d4ed8;
+            animation: infoAlert 3s ease-in-out infinite;
+          }
+
+          /*
+           * The animation changes ONLY this button's
+           * shadow/background.
+           */
+
+          @keyframes criticalAlert {
+            0%, 100% {
+              background: #fee2e2;
+              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.15);
+            }
+
+            50% {
+              background: #fecaca;
+              box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.12);
+            }
+          }
+
+          @keyframes highAlert {
+            0%, 100% {
+              background: #ffedd5;
+              box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.12);
+            }
+
+            50% {
+              background: #fed7aa;
+              box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.10);
+            }
+          }
+
+          @keyframes mediumAlert {
+            0%, 100% {
+              background: #fef9c3;
+              box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.10);
+            }
+
+            50% {
+              background: #fef08a;
+              box-shadow: 0 0 0 5px rgba(234, 179, 8, 0.08);
+            }
+          }
+
+          @keyframes lowAlert {
+            0%, 100% {
+              background: #dcfce7;
+              box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.08);
+            }
+
+            50% {
+              background: #bbf7d0;
+              box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.07);
+            }
+          }
+
+          @keyframes infoAlert {
+            0%, 100% {
+              background: #dbeafe;
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.07);
+            }
+
+            50% {
+              background: #bfdbfe;
+              box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.06);
+            }
+          }
+
+          /*
+           * If the device requests reduced motion,
+           * stop the flashing animation.
+           */
+          @media (prefers-reduced-motion: reduce) {
+            .alert-critical,
+            .alert-high,
+            .alert-medium,
+            .alert-low,
+            .alert-info {
+              animation: none;
+            }
+          }
+
+          .signin-button {
+            border: none;
+            background: #0f172a;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          .main-content {
+            width: min(1400px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+          }
+
+          .welcome-section {
+            margin-bottom: 24px;
+          }
+
+          .welcome-title {
+            margin: 0;
+            font-size: clamp(26px, 5vw, 38px);
+            font-weight: 850;
+          }
+
+          .welcome-text {
+            margin: 8px 0 0;
+            color: #64748b;
+            font-size: 15px;
+          }
+
+          .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+          }
+
+          .stat-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .stat-label {
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 700;
+          }
+
+          .stat-value {
+            font-size: 32px;
+            font-weight: 850;
+            margin-top: 8px;
+          }
+
+          .quick-section {
+            margin-bottom: 28px;
+          }
+
+          .section-title {
+            margin: 0 0 14px;
+            font-size: 21px;
+            font-weight: 800;
+          }
+
+          .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .quick-button {
+            border: none;
+            border-radius: 16px;
+            padding: 18px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.05);
+            cursor: pointer;
+            text-align: left;
+            font-weight: 800;
+            color: #0f172a;
+            transition: 0.2s ease;
+          }
+
+          .quick-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 25px rgba(15,23,42,0.1);
+          }
+
+          .quick-icon {
+            font-size: 26px;
+            display: block;
+            margin-bottom: 10px;
+          }
+
+          .emergency-section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .emergency-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .emergency-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+          }
+
+          .emergency-title {
+            font-weight: 800;
+            margin-bottom: 5px;
+          }
+
+          .emergency-location {
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          .severity-badge {
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            white-space: nowrap;
+          }
+
+          .critical {
+            background: #fee2e2;
+            color: #b91c1c;
+          }
+
+          .high {
+            background: #ffedd5;
+            color: #c2410c;
+          }
+
+          .medium {
+            background: #fef9c3;
+            color: #a16207;
+          }
+
+          .low {
+            background: #dcfce7;
+            color: #15803d;
+          }
+
+          .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #64748b;
+          }
+
+          .footer {
+            text-align: center;
+            padding: 25px 15px;
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          @media (max-width: 1000px) {
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 650px) {
+            .dashboard-header {
+              padding: 10px 12px;
+            }
+
+            .header-inner {
+              align-items: flex-start;
+            }
+
+            .header-actions {
+              width: 100%;
+            }
+
+            .alert-button,
+            .signin-button {
+              flex: 1;
+              justify-content: center;
+            }
+
+            .main-content {
+              width: min(100% - 20px, 1400px);
+              padding-top: 20px;
+            }
+
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .stat-card {
+              padding: 17px;
+            }
+
+            .emergency-card {
+              align-items: flex-start;
+              flex-direction: column;
+            }
+          }
+        `}
+      </style>
+
+      <div className="dashboard-page">
+        {/* HEADER */}
+        <header className="dashboard-header">
+          <div className="header-inner">
+            <div className="brand">
+              <div className="brand-icon">🚨</div>
+
+              <div>
+                <div className="brand-title">ResQHub</div>
+                <div className="brand-subtitle">
+                  Emergency Response Management
+                </div>
+              </div>
+            </div>
+
+            <div className="header-actions">
+              <button
+                className={getAlertButtonClass()}
+                onClick={() => navigate("/alerts")}
+              >
+                🔔 Alerts
+
+                {alerts.length > 0 && (
+                  <span
+                    style={{
+                      background: "currentColor",
+                      color: "white",
+                      minWidth: "22px",
+                      height: "22px",
+                      borderRadius: "999px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                className="signin-button"
+                onClick={() => navigate("/login")}
+              >
+                🔐 Sign In
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* MAIN */}
+        <main className="main-content">
+          <section className="welcome-section">
+            <h1 className="welcome-title">Emergency Dashboard</h1>
+
+            <p className="welcome-text">
+              Monitor emergencies, volunteers, relief camps, resources and
+              alerts from one place.
+            </p>
+          </section>
+
+          {/* STATS */}
+          <section className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">🚨 Emergencies</div>
+              <div className="stat-value">{emergencies.length}</div>
+            </div>
+
+            <div className="stat-card">
+  <div className="stat-label">👥 Total Volunteers</div>
+
+  <div className="stat-value">
+    {totalVolunteers}
+  </div>
+
+  <div
+    style={{
+      marginTop: "6px",
+      fontSize: "13px",
+      color: "#16a34a",
+      fontWeight: 700,
+    }}
+  >
+    ✅ {availableVolunteers} Available
+  </div>
+</div>
+
+            <div className="stat-card">
+              <div className="stat-label">🏕️ Active Relief Camps</div>
+              <div className="stat-value">{activeCamps}</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-label">📦 Resource Quantity</div>
+              <div className="stat-value">{totalResourceQuantity}</div>
+            </div>
+          </section>
+
+          {/* QUICK ACTIONS */}
+          <section className="quick-section">
+            <h2 className="section-title">Quick Actions</h2>
+
+            <div className="quick-grid">
+              <button
+                className="quick-button"
+                onClick={() => navigate("/emergencies")}
+              >
+                <span className="quick-icon">🚨</span>
+                Manage Emergencies
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/volunteers")}
+              >
+                <span className="quick-icon">👥</span>
+                Manage Volunteers
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/camps")}
+              >
+                <span className="quick-icon">🏕️</span>
+                Relief Camps
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/resources")}
+              >
+                <span className="quick-icon">📦</span>
+                Resources
+              </button>
+            </div>
+          </section>
+
+          {/* RECENT EMERGENCIES */}
+          <section className="emergency-section">
+            <h2 className="section-title">Recent Emergencies</h2>
+
+            {emergencies.length === 0 ? (
+              <div className="empty-state">
+                No emergency reports available.
+              </div>
+            ) : (
+              <div className="emergency-list">
+                {emergencies.slice(0, 5).map((emergency) => {
+                  const severity = String(
+                    emergency.severity || "medium"
+                  ).toLowerCase();
+
+                  return (
+                    <div className="emergency-card" key={emergency.id}>
+                      <div>
+                        <div className="emergency-title">
+                          {emergency.title}
+                        </div>
+
+                        <div className="emergency-location">
+                          📍 {emergency.location || "Location unavailable"}
+                        </div>
+                      </div>
+
+                      <span
+                        className={`severity-badge ${
+                          severity === "critical"
+                            ? "critical"
+                            : severity === "high"
+                            ? "high"
+                            : severity === "low"
+                            ? "low"
+                            : "medium"
+                        }`}
+                      >
+                        {severity}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
+
+        <footer className="footer">
+          © 2026 ResQHub — Emergency Response Management Platform
+        </footer>
+      </div>
+    </>
+  );
+}
+
+export default Dashboard;
+
+
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+interface Emergency {
+  id: number;
+  title: string;
+  description: string;
+  location: string;
+  severity: string;
+  status: string;
+}
+
+interface Volunteer {
+  id: number;
+  name: string;
+  skill: string;
+  location: string;
+  phone: string | null;
+  status: string;
+  assignment: string | null;
+}
+
+interface ReliefCamp {
+  id: number;
+  name: string;
+  location: string;
+  capacity: number;
+  current_people: number;
+  status: string;
+}
+
+interface Resource {
+  id: number;
+  name: string;
+  category: string;
+  quantity: number;
+  location: string;
+}
+
+interface Alert {
+  id: number;
+  title: string;
+  message: string;
+  severity: string;
+  location: string;
+}
+
+function Dashboard() {
+  const navigate = useNavigate();
+
+  const [emergencies, setEmergencies] = useState<Emergency[]>([]);
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [camps, setCamps] = useState<ReliefCamp[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+
+  const API_URL =
+    import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const [
+        emergenciesResponse,
+        volunteersResponse,
+        campsResponse,
+        resourcesResponse,
+        alertsResponse,
+      ] = await Promise.all([
+        fetch(`${API_URL}/api/emergency-reports`),
+        fetch(`${API_URL}/api/volunteers`),
+        fetch(`${API_URL}/api/relief-camps`),
+        fetch(`${API_URL}/api/resources`),
+        fetch(`${API_URL}/api/alerts`),
+      ]);
+
+      if (emergenciesResponse.ok) {
+        setEmergencies(await emergenciesResponse.json());
+      }
+
+      if (volunteersResponse.ok) {
+        setVolunteers(await volunteersResponse.json());
+      }
+
+      if (campsResponse.ok) {
+        setCamps(await campsResponse.json());
+      }
+
+      if (resourcesResponse.ok) {
+        setResources(await resourcesResponse.json());
+      }
+
+      if (alertsResponse.ok) {
+        setAlerts(await alertsResponse.json());
+      }
+    } catch (error) {
+      console.error("Dashboard loading error:", error);
+    }
+  };
+
+  /*
+   * Find the highest alert severity.
+   *
+   * Critical > High > Medium > Low > Info
+   */
+  const getHighestAlertSeverity = () => {
+    if (alerts.length === 0) {
+      return "";
+    }
+
+    const severityRank: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+
+    let highestSeverity = "info";
+    let highestRank = 0;
+
+    alerts.forEach((alert) => {
+      const severity = String(alert.severity || "info").toLowerCase();
+      const rank = severityRank[severity] || 1;
+
+      if (rank > highestRank) {
+        highestRank = rank;
+        highestSeverity = severity;
+      }
+    });
+
+    return highestSeverity;
+  };
+
+  const highestSeverity = getHighestAlertSeverity();
+
+  const getAlertButtonClass = () => {
+    if (highestSeverity === "critical") {
+      return "alert-button alert-critical";
+    }
+
+    if (highestSeverity === "high") {
+      return "alert-button alert-high";
+    }
+
+    if (highestSeverity === "medium") {
+      return "alert-button alert-medium";
+    }
+
+    if (highestSeverity === "low") {
+      return "alert-button alert-low";
+    }
+
+    if (highestSeverity === "info") {
+      return "alert-button alert-info";
+    }
+
+    return "alert-button";
+  };
+
+  const totalResourceQuantity = resources.reduce(
+    (total, resource) => total + Number(resource.quantity || 0),
+    0
+  );
+
+ const totalVolunteers = volunteers.length;
+
+  const availableVolunteers = volunteers.filter(
+    (volunteer) => String(volunteer.status || " ").toLowerCase() === "available"
+  ).length;
+
+  const activeCamps = camps.filter(
+    (camp) => String(camp.status).toLowerCase() === "active"
+  ).length;
+
+  return (
+    <>
+      <style>
+        {`
+          *{
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f8fafc;
+          }
+
+          .dashboard-page {
+            min-height: 100vh;
+            background:
+              linear-gradient(
+                135deg,
+                #f8fafc 0%,
+                #eef6ff 50%,
+                #f8fafc 100%
+              );
+            color: #0f172a;
+            overflow-x: hidden;
+          }
+
+          .dashboard-header {
+            background: rgba(255,255,255,0.96);
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px clamp(14px, 4vw, 40px);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(12px);
+          }
+
+          .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+          }
+
+          .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+          }
+
+          .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 22px;
+            flex-shrink: 0;
+          }
+
+          .brand-title {
+            font-size: clamp(18px, 3vw, 23px);
+            font-weight: 800;
+            color: #0f172a;
+          }
+
+          .brand-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+          }
+
+          .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+
+          /*
+           * NORMAL ALERT BUTTON
+           */
+          .alert-button {
+            border: 1px solid #cbd5e1;
+            background: white;
+            color: #0f172a;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s ease;
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+          }
+
+          .alert-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(15,23,42,0.12);
+          }
+
+          /*
+           * ONLY THE ALERTS BUTTON FLASHES.
+           */
+
+          .alert-critical {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #b91c1c;
+            animation: criticalAlert 1s ease-in-out infinite;
+          }
+
+          .alert-high {
+            background: #ffedd5;
+            border-color: #f97316;
+            color: #c2410c;
+            animation: highAlert 1.4s ease-in-out infinite;
+          }
+
+          .alert-medium {
+            background: #fef9c3;
+            border-color: #eab308;
+            color: #a16207;
+            animation: mediumAlert 1.8s ease-in-out infinite;
+          }
+
+          .alert-low {
+            background: #dcfce7;
+            border-color: #22c55e;
+            color: #15803d;
+            animation: lowAlert 2.4s ease-in-out infinite;
+          }
+
+          .alert-info {
+            background: #dbeafe;
+            border-color: #3b82f6;
+            color: #1d4ed8;
+            animation: infoAlert 3s ease-in-out infinite;
+          }
+
+          /*
+           * The animation changes ONLY this button's
+           * shadow/background.
+           */
+
+          @keyframes criticalAlert {
+            0%, 100% {
+              background: #fee2e2;
+              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.15);
+            }
+
+            50% {
+              background: #fecaca;
+              box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.12);
+            }
+          }
+
+          @keyframes highAlert {
+            0%, 100% {
+              background: #ffedd5;
+              box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.12);
+            }
+
+            50% {
+              background: #fed7aa;
+              box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.10);
+            }
+          }
+
+          @keyframes mediumAlert {
+            0%, 100% {
+              background: #fef9c3;
+              box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.10);
+            }
+
+            50% {
+              background: #fef08a;
+              box-shadow: 0 0 0 5px rgba(234, 179, 8, 0.08);
+            }
+          }
+
+          @keyframes lowAlert {
+            0%, 100% {
+              background: #dcfce7;
+              box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.08);
+            }
+
+            50% {
+              background: #bbf7d0;
+              box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.07);
+            }
+          }
+
+          @keyframes infoAlert {
+            0%, 100% {
+              background: #dbeafe;
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.07);
+            }
+
+            50% {
+              background: #bfdbfe;
+              box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.06);
+            }
+          }
+
+          /*
+           * If the device requests reduced motion,
+           * stop the flashing animation.
+           */
+          @media (prefers-reduced-motion: reduce) {
+            .alert-critical,
+            .alert-high,
+            .alert-medium,
+            .alert-low,
+            .alert-info {
+              animation: none;
+            }
+          }
+
+          .signin-button {
+            border: none;
+            background: #0f172a;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          .main-content {
+            width: min(1400px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+          }
+
+          .welcome-section {
+            margin-bottom: 24px;
+          }
+
+          .welcome-title {
+            margin: 0;
+            font-size: clamp(26px, 5vw, 38px);
+            font-weight: 850;
+          }
+
+          .welcome-text {
+            margin: 8px 0 0;
+            color: #64748b;
+            font-size: 15px;
+          }
+
+          .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+          }
+
+          .stat-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .stat-label {
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 700;
+          }
+
+          .stat-value {
+            font-size: 32px;
+            font-weight: 850;
+            margin-top: 8px;
+          }
+
+          .quick-section {
+            margin-bottom: 28px;
+          }
+
+          .section-title {
+            margin: 0 0 14px;
+            font-size: 21px;
+            font-weight: 800;
+          }
+
+          .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .quick-button {
+            border: none;
+            border-radius: 16px;
+            padding: 18px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.05);
+            cursor: pointer;
+            text-align: left;
+            font-weight: 800;
+            color: #0f172a;
+            transition: 0.2s ease;
+          }
+
+          .quick-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 25px rgba(15,23,42,0.1);
+          }
+
+          .quick-icon {
+            font-size: 26px;
+            display: block;
+            margin-bottom: 10px;
+          }
+
+          .emergency-section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .emergency-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .emergency-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+          }
+
+          .emergency-title {
+            font-weight: 800;
+            margin-bottom: 5px;
+          }
+
+          .emergency-location {
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          .severity-badge {
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            white-space: nowrap;
+          }
+
+          .critical {
+            background: #fee2e2;
+            color: #b91c1c;
+          }
+
+          .high {
+            background: #ffedd5;
+            color: #c2410c;
+          }
+
+          .medium {
+            background: #fef9c3;
+            color: #a16207;
+          }
+
+          .low {
+            background: #dcfce7;
+            color: #15803d;
+          }
+
+          .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #64748b;
+          }
+
+          .footer {
+            text-align: center;
+            padding: 25px 15px;
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          @media (max-width: 1000px) {
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 650px) {
+            .dashboard-header {
+              padding: 10px 12px;
+            }
+
+            .header-inner {
+              align-items: flex-start;
+            }
+
+            .header-actions {
+              width: 100%;
+            }
+
+            .alert-button,
+            .signin-button {
+              flex: 1;
+              justify-content: center;
+            }
+
+            .main-content {
+              width: min(100% - 20px, 1400px);
+              padding-top: 20px;
+            }
+
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .stat-card {
+              padding: 17px;
+            }
+
+            .emergency-card {
+              align-items: flex-start;
+              flex-direction: column;
+            }
+          }
+        `}
+      </style>
+
+      <div className="dashboard-page">
+        {/* HEADER */}
+        <header className="dashboard-header">
+          <div className="header-inner">
+            <div className="brand">
+              <div className="brand-icon">🚨</div>
+
+              <div>
+                <div className="brand-title">ResQHub</div>
+                <div className="brand-subtitle">
+                  Emergency Response Management
+                </div>
+              </div>
+            </div>
+
+            <div className="header-actions">
+              <button
+                className={getAlertButtonClass()}
+                onClick={() => navigate("/alerts")}
+              >
+                🔔 Alerts
+
+                {alerts.length > 0 && (
+                  <span
+                    style={{
+                      background: "currentColor",
+                      color: "white",
+                      minWidth: "22px",
+                      height: "22px",
+                      borderRadius: "999px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                className="signin-button"
+                onClick={() => navigate("/login")}
+              >
+                🔐 Sign In
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* MAIN */}
+        <main className="main-content">
+          <section className="welcome-section">
+            <h1 className="welcome-title">Emergency Dashboard</h1>
+
+            <p className="welcome-text">
+              Monitor emergencies, volunteers, relief camps, resources and
+              alerts from one place.
+            </p>
+          </section>
+
+          {/* STATS */}
+          <section className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">🚨 Emergencies</div>
+              <div className="stat-value">{emergencies.length}</div>
+            </div>
+
+            <div className="stat-card">
+  <div className="stat-label">👥 Total Volunteers</div>
+
+  <div className="stat-value">
+    {totalVolunteers}
+  </div>
+
+  <div
+    style={{
+      marginTop: "6px",
+      fontSize: "13px",
+      color: "#16a34a",
+      fontWeight: 700,
+    }}
+  >
+    ✅ {availableVolunteers} Available
+  </div>
+</div>
+
+            <div className="stat-card">
+              <div className="stat-label">🏕️ Active Relief Camps</div>
+              <div className="stat-value">{activeCamps}</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-label">📦 Resource Quantity</div>
+              <div className="stat-value">{totalResourceQuantity}</div>
+            </div>
+          </section>
+
+          {/* QUICK ACTIONS */}
+          <section className="quick-section">
+            <h2 className="section-title">Quick Actions</h2>
+
+            <div className="quick-grid">
+              <button
+                className="quick-button"
+                onClick={() => navigate("/emergencies")}
+              >
+                <span className="quick-icon">🚨</span>
+                Manage Emergencies
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/volunteers")}
+              >
+                <span className="quick-icon">👥</span>
+                Manage Volunteers
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/camps")}
+              >
+                <span className="quick-icon">🏕️</span>
+                Relief Camps
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/resources")}
+              >
+                <span className="quick-icon">📦</span>
+                Resources
+              </button>
+            </div>
+          </section>
+
+          {/* RECENT EMERGENCIES */}
+          <section className="emergency-section">
+            <h2 className="section-title">Recent Emergencies</h2>
+
+            {emergencies.length === 0 ? (
+              <div className="empty-state">
+                No emergency reports available.
+              </div>
+            ) : (
+              <div className="emergency-list">
+                {emergencies.slice(0, 5).map((emergency) => {
+                  const severity = String(
+                    emergency.severity || "medium"
+                  ).toLowerCase();
+
+                  return (
+                    <div className="emergency-card" key={emergency.id}>
+                      <div>
+                        <div className="emergency-title">
+                          {emergency.title}
+                        </div>
+
+                        <div className="emergency-location">
+                          📍 {emergency.location || "Location unavailable"}
+                        </div>
+                      </div>
+
+                      <span
+                        className={`severity-badge ${
+                          severity === "critical"
+                            ? "critical"
+                            : severity === "high"
+                            ? "high"
+                            : severity === "low"
+                            ? "low"
+                            : "medium"
+                        }`}
+                      >
+                        {severity}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
+
+        <footer className="footer">
+          © 2026 ResQHub — Emergency Response Management Platform
+        </footer>
+      </div>
+    </>
+  );
+}
+
+export default Dashboard;
+
+
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+interface Emergency {
+  id: number;
+  title: string;
+  description: string;
+  location: string;
+  severity: string;
+  status: string;
+}
+
+interface Volunteer {
+  id: number;
+  name: string;
+  skill: string;
+  location: string;
+  phone: string | null;
+  status: string;
+  assignment: string | null;
+}
+
+interface ReliefCamp {
+  id: number;
+  name: string;
+  location: string;
+  capacity: number;
+  current_people: number;
+  status: string;
+}
+
+interface Resource {
+  id: number;
+  name: string;
+  category: string;
+  quantity: number;
+  location: string;
+}
+
+interface Alert {
+  id: number;
+  title: string;
+  message: string;
+  severity: string;
+  location: string;
+}
+
+function Dashboard() {
+  const navigate = useNavigate();
+
+  const [emergencies, setEmergencies] = useState<Emergency[]>([]);
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [camps, setCamps] = useState<ReliefCamp[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+
+  const API_URL =
+    import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const [
+        emergenciesResponse,
+        volunteersResponse,
+        campsResponse,
+        resourcesResponse,
+        alertsResponse,
+      ] = await Promise.all([
+        fetch(`${API_URL}/api/emergency-reports`),
+        fetch(`${API_URL}/api/volunteers`),
+        fetch(`${API_URL}/api/relief-camps`),
+        fetch(`${API_URL}/api/resources`),
+        fetch(`${API_URL}/api/alerts`),
+      ]);
+
+      if (emergenciesResponse.ok) {
+        setEmergencies(await emergenciesResponse.json());
+      }
+
+      if (volunteersResponse.ok) {
+        setVolunteers(await volunteersResponse.json());
+      }
+
+      if (campsResponse.ok) {
+        setCamps(await campsResponse.json());
+      }
+
+      if (resourcesResponse.ok) {
+        setResources(await resourcesResponse.json());
+      }
+
+      if (alertsResponse.ok) {
+        setAlerts(await alertsResponse.json());
+      }
+    } catch (error) {
+      console.error("Dashboard loading error:", error);
+    }
+  };
+
+  /*
+   * Find the highest alert severity.
+   *
+   * Critical > High > Medium > Low > Info
+   */
+  const getHighestAlertSeverity = () => {
+    if (alerts.length === 0) {
+      return "";
+    }
+
+    const severityRank: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+
+    let highestSeverity = "info";
+    let highestRank = 0;
+
+    alerts.forEach((alert) => {
+      const severity = String(alert.severity || "info").toLowerCase();
+      const rank = severityRank[severity] || 1;
+
+      if (rank > highestRank) {
+        highestRank = rank;
+        highestSeverity = severity;
+      }
+    });
+
+    return highestSeverity;
+  };
+
+  const highestSeverity = getHighestAlertSeverity();
+
+  const getAlertButtonClass = () => {
+    if (highestSeverity === "critical") {
+      return "alert-button alert-critical";
+    }
+
+    if (highestSeverity === "high") {
+      return "alert-button alert-high";
+    }
+
+    if (highestSeverity === "medium") {
+      return "alert-button alert-medium";
+    }
+
+    if (highestSeverity === "low") {
+      return "alert-button alert-low";
+    }
+
+    if (highestSeverity === "info") {
+      return "alert-button alert-info";
+    }
+
+    return "alert-button";
+  };
+
+  const totalResourceQuantity = resources.reduce(
+    (total, resource) => total + Number(resource.quantity || 0),
+    0
+  );
+
+ const totalVolunteers = volunteers.length;
+
+  const availableVolunteers = volunteers.filter(
+    (volunteer) => String(volunteer.status || " ").toLowerCase() === "available"
+  ).length;
+
+  const activeCamps = camps.filter(
+    (camp) => String(camp.status).toLowerCase() === "active"
+  ).length;
+
+  return (
+    <>
+      <style>
+        {`
+          *{
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f8fafc;
+          }
+
+          .dashboard-page {
+            min-height: 100vh;
+            background:
+              linear-gradient(
+                135deg,
+                #f8fafc 0%,
+                #eef6ff 50%,
+                #f8fafc 100%
+              );
+            color: #0f172a;
+            overflow-x: hidden;
+          }
+
+          .dashboard-header {
+            background: rgba(255,255,255,0.96);
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px clamp(14px, 4vw, 40px);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(12px);
+          }
+
+          .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+          }
+
+          .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+          }
+
+          .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 22px;
+            flex-shrink: 0;
+          }
+
+          .brand-title {
+            font-size: clamp(18px, 3vw, 23px);
+            font-weight: 800;
+            color: #0f172a;
+          }
+
+          .brand-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+          }
+
+          .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+
+          /*
+           * NORMAL ALERT BUTTON
+           */
+          .alert-button {
+            border: 1px solid #cbd5e1;
+            background: white;
+            color: #0f172a;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s ease;
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+          }
+
+          .alert-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(15,23,42,0.12);
+          }
+
+          /*
+           * ONLY THE ALERTS BUTTON FLASHES.
+           */
+
+          .alert-critical {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #b91c1c;
+            animation: criticalAlert 1s ease-in-out infinite;
+          }
+
+          .alert-high {
+            background: #ffedd5;
+            border-color: #f97316;
+            color: #c2410c;
+            animation: highAlert 1.4s ease-in-out infinite;
+          }
+
+          .alert-medium {
+            background: #fef9c3;
+            border-color: #eab308;
+            color: #a16207;
+            animation: mediumAlert 1.8s ease-in-out infinite;
+          }
+
+          .alert-low {
+            background: #dcfce7;
+            border-color: #22c55e;
+            color: #15803d;
+            animation: lowAlert 2.4s ease-in-out infinite;
+          }
+
+          .alert-info {
+            background: #dbeafe;
+            border-color: #3b82f6;
+            color: #1d4ed8;
+            animation: infoAlert 3s ease-in-out infinite;
+          }
+
+          /*
+           * The animation changes ONLY this button's
+           * shadow/background.
+           */
+
+          @keyframes criticalAlert {
+            0%, 100% {
+              background: #fee2e2;
+              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.15);
+            }
+
+            50% {
+              background: #fecaca;
+              box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.12);
+            }
+          }
+
+          @keyframes highAlert {
+            0%, 100% {
+              background: #ffedd5;
+              box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.12);
+            }
+
+            50% {
+              background: #fed7aa;
+              box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.10);
+            }
+          }
+
+          @keyframes mediumAlert {
+            0%, 100% {
+              background: #fef9c3;
+              box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.10);
+            }
+
+            50% {
+              background: #fef08a;
+              box-shadow: 0 0 0 5px rgba(234, 179, 8, 0.08);
+            }
+          }
+
+          @keyframes lowAlert {
+            0%, 100% {
+              background: #dcfce7;
+              box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.08);
+            }
+
+            50% {
+              background: #bbf7d0;
+              box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.07);
+            }
+          }
+
+          @keyframes infoAlert {
+            0%, 100% {
+              background: #dbeafe;
+              box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.07);
+            }
+
+            50% {
+              background: #bfdbfe;
+              box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.06);
+            }
+          }
+
+          /*
+           * If the device requests reduced motion,
+           * stop the flashing animation.
+           */
+          @media (prefers-reduced-motion: reduce) {
+            .alert-critical,
+            .alert-high,
+            .alert-medium,
+            .alert-low,
+            .alert-info {
+              animation: none;
+            }
+          }
+
+          .signin-button {
+            border: none;
+            background: #0f172a;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          .main-content {
+            width: min(1400px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+          }
+
+          .welcome-section {
+            margin-bottom: 24px;
+          }
+
+          .welcome-title {
+            margin: 0;
+            font-size: clamp(26px, 5vw, 38px);
+            font-weight: 850;
+          }
+
+          .welcome-text {
+            margin: 8px 0 0;
+            color: #64748b;
+            font-size: 15px;
+          }
+
+          .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+          }
+
+          .stat-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .stat-label {
+            color: #64748b;
+            font-size: 13px;
+            font-weight: 700;
+          }
+
+          .stat-value {
+            font-size: 32px;
+            font-weight: 850;
+            margin-top: 8px;
+          }
+
+          .quick-section {
+            margin-bottom: 28px;
+          }
+
+          .section-title {
+            margin: 0 0 14px;
+            font-size: 21px;
+            font-weight: 800;
+          }
+
+          .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          .quick-button {
+            border: none;
+            border-radius: 16px;
+            padding: 18px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.05);
+            cursor: pointer;
+            text-align: left;
+            font-weight: 800;
+            color: #0f172a;
+            transition: 0.2s ease;
+          }
+
+          .quick-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 25px rgba(15,23,42,0.1);
+          }
+
+          .quick-icon {
+            font-size: 26px;
+            display: block;
+            margin-bottom: 10px;
+          }
+
+          .emergency-section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(15,23,42,0.06);
+          }
+
+          .emergency-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .emergency-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+          }
+
+          .emergency-title {
+            font-weight: 800;
+            margin-bottom: 5px;
+          }
+
+          .emergency-location {
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          .severity-badge {
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            white-space: nowrap;
+          }
+
+          .critical {
+            background: #fee2e2;
+            color: #b91c1c;
+          }
+
+          .high {
+            background: #ffedd5;
+            color: #c2410c;
+          }
+
+          .medium {
+            background: #fef9c3;
+            color: #a16207;
+          }
+
+          .low {
+            background: #dcfce7;
+            color: #15803d;
+          }
+
+          .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #64748b;
+          }
+
+          .footer {
+            text-align: center;
+            padding: 25px 15px;
+            color: #64748b;
+            font-size: 13px;
+          }
+
+          @media (max-width: 1000px) {
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 650px) {
+            .dashboard-header {
+              padding: 10px 12px;
+            }
+
+            .header-inner {
+              align-items: flex-start;
+            }
+
+            .header-actions {
+              width: 100%;
+            }
+
+            .alert-button,
+            .signin-button {
+              flex: 1;
+              justify-content: center;
+            }
+
+            .main-content {
+              width: min(100% - 20px, 1400px);
+              padding-top: 20px;
+            }
+
+            .stats-grid,
+            .quick-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .stat-card {
+              padding: 17px;
+            }
+
+            .emergency-card {
+              align-items: flex-start;
+              flex-direction: column;
+            }
+          }
+        `}
+      </style>
+
+      <div className="dashboard-page">
+        {/* HEADER */}
+        <header className="dashboard-header">
+          <div className="header-inner">
+            <div className="brand">
+              <div className="brand-icon">🚨</div>
+
+              <div>
+                <div className="brand-title">ResQHub</div>
+                <div className="brand-subtitle">
+                  Emergency Response Management
+                </div>
+              </div>
+            </div>
+
+            <div className="header-actions">
+              <button
+                className={getAlertButtonClass()}
+                onClick={() => navigate("/alerts")}
+              >
+                🔔 Alerts
+
+                {alerts.length > 0 && (
+                  <span
+                    style={{
+                      background: "currentColor",
+                      color: "white",
+                      minWidth: "22px",
+                      height: "22px",
+                      borderRadius: "999px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                className="signin-button"
+                onClick={() => navigate("/login")}
+              >
+                🔐 Sign In
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* MAIN */}
+        <main className="main-content">
+          <section className="welcome-section">
+            <h1 className="welcome-title">Emergency Dashboard</h1>
+
+            <p className="welcome-text">
+              Monitor emergencies, volunteers, relief camps, resources and
+              alerts from one place.
+            </p>
+          </section>
+
+          {/* STATS */}
+          <section className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">🚨 Emergencies</div>
+              <div className="stat-value">{emergencies.length}</div>
+            </div>
+
+            <div className="stat-card">
+  <div className="stat-label">👥 Total Volunteers</div>
+
+  <div className="stat-value">
+    {totalVolunteers}
+  </div>
+
+  <div
+    style={{
+      marginTop: "6px",
+      fontSize: "13px",
+      color: "#16a34a",
+      fontWeight: 700,
+    }}
+  >
+    ✅ {availableVolunteers} Available
+  </div>
+</div>
+
+            <div className="stat-card">
+              <div className="stat-label">🏕️ Active Relief Camps</div>
+              <div className="stat-value">{activeCamps}</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-label">📦 Resource Quantity</div>
+              <div className="stat-value">{totalResourceQuantity}</div>
+            </div>
+          </section>
+
+          {/* QUICK ACTIONS */}
+          <section className="quick-section">
+            <h2 className="section-title">Quick Actions</h2>
+
+            <div className="quick-grid">
+              <button
+                className="quick-button"
+                onClick={() => navigate("/emergencies")}
+              >
+                <span className="quick-icon">🚨</span>
+                Manage Emergencies
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/volunteers")}
+              >
+                <span className="quick-icon">👥</span>
+                Manage Volunteers
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/camps")}
+              >
+                <span className="quick-icon">🏕️</span>
+                Relief Camps
+              </button>
+
+              <button
+                className="quick-button"
+                onClick={() => navigate("/resources")}
+              >
+                <span className="quick-icon">📦</span>
+                Resources
+              </button>
+            </div>
+          </section>
+
+          {/* RECENT EMERGENCIES */}
+          <section className="emergency-section">
+            <h2 className="section-title">Recent Emergencies</h2>
+
+            {emergencies.length === 0 ? (
+              <div className="empty-state">
+                No emergency reports available.
+              </div>
+            ) : (
+              <div className="emergency-list">
+                {emergencies.slice(0, 5).map((emergency) => {
+                  const severity = String(
+                    emergency.severity || "medium"
+                  ).toLowerCase();
+
+                  return (
+                    <div className="emergency-card" key={emergency.id}>
+                      <div>
+                        <div className="emergency-title">
+                          {emergency.title}
+                        </div>
+
+                        <div className="emergency-location">
+                          📍 {emergency.location || "Location unavailable"}
+                        </div>
+                      </div>
+
+                      <span
+                        className={`severity-badge ${
+                          severity === "critical"
+                            ? "critical"
+                            : severity === "high"
+                            ? "high"
+                            : severity === "low"
+                            ? "low"
+                            : "medium"
+                        }`}
+                      >
+                        {severity}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
+
+        <footer className="footer">
+          © 2026 ResQHub — Emergency Response Management Platform
+        </footer>
+      </div>
+    </>
+  );
+}
+
+export default Dashboard;
+
