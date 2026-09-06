@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import pool from "../db/database";
 
+// GET ALL ALERTS
 export const getAlerts = async (
   _req: Request,
   res: Response
@@ -28,6 +29,7 @@ export const getAlerts = async (
   }
 };
 
+// CREATE ALERT
 export const createAlert = async (
   req: Request,
   res: Response
@@ -72,6 +74,64 @@ export const createAlert = async (
   }
 };
 
+// UPDATE / EDIT ALERT
+export const updateAlert = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      title,
+      message,
+      severity,
+      location,
+    } = req.body;
+
+    if (!title || !message) {
+      return res.status(400).json({
+        message: "Title and message are required",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE alerts
+      SET
+        title = $1,
+        message = $2,
+        severity = $3,
+        location = $4
+      WHERE id = $5
+      RETURNING *
+      `,
+      [
+        title,
+        message,
+        severity || "info",
+        location || null,
+        id,
+      ]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message: "Alert not found",
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating alert:", error);
+
+    res.status(500).json({
+      message: "Failed to update alert",
+    });
+  }
+};
+
+// DELETE ALERT
 export const deleteAlert = async (
   req: Request,
   res: Response
@@ -80,7 +140,11 @@ export const deleteAlert = async (
     const { id } = req.params;
 
     const result = await pool.query(
-      "DELETE FROM alerts WHERE id = $1 RETURNING id",
+      `
+      DELETE FROM alerts
+      WHERE id = $1
+      RETURNING id
+      `,
       [id]
     );
 
