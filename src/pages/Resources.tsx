@@ -1,3 +1,4 @@
+
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +21,7 @@ function Resources() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -41,10 +43,10 @@ function Resources() {
       }
 
       const data = await response.json();
-
       setResources(data);
     } catch (error) {
       console.error("Error loading resources:", error);
+      alert("Failed to load resources.");
     } finally {
       setLoading(false);
     }
@@ -54,62 +56,96 @@ function Resources() {
     loadResources();
   }, []);
 
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+
+    setForm({
+      name: "",
+      category: "",
+      quantity: "",
+      location: "",
+    });
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
     if (!form.name || !form.category || !form.location) {
-      alert(
-        "Please enter resource name, category and location."
-      );
+      alert("Please enter resource name, category and location.");
       return;
     }
 
     setSaving(true);
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/resources`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: form.name,
-            category: form.category,
-            quantity: Number(form.quantity) || 0,
-            location: form.location,
-          }),
-        }
-      );
+      const isEditing = editingId !== null;
+
+      const url = isEditing
+        ? `${API_URL}/api/resources/${editingId}`
+        : `${API_URL}/api/resources`;
+
+      const response = await fetch(url, {
+        method: isEditing ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: form.name,
+          category: form.category,
+          quantity: Number(form.quantity) || 0,
+          location: form.location,
+        }),
+      });
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.message || "Failed to add resource"
+          data.message ||
+            (isEditing
+              ? "Failed to update resource"
+              : "Failed to add resource")
         );
       }
 
-      alert("Resource added successfully!");
+      alert(
+        isEditing
+          ? "Resource updated successfully!"
+          : "Resource added successfully!"
+      );
 
-      setForm({
-        name: "",
-        category: "",
-        quantity: "",
-        location: "",
-      });
-
-      setShowForm(false);
-
+      resetForm();
       await loadResources();
     } catch (error) {
-      console.error("Error adding resource:", error);
+      console.error("Error saving resource:", error);
 
-      alert("Failed to add resource.");
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to save resource."
+      );
     } finally {
       setSaving(false);
     }
+  };
+
+  const editResource = (resource: Resource) => {
+    setEditingId(resource.id);
+
+    setForm({
+      name: resource.name,
+      category: resource.category,
+      quantity: String(resource.quantity),
+      location: resource.location,
+    });
+
+    setShowForm(true);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   const deleteResource = async (
@@ -120,9 +156,7 @@ function Resources() {
       `Are you sure you want to delete ${name}?`
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
       const response = await fetch(
@@ -145,284 +179,653 @@ function Resources() {
       await loadResources();
     } catch (error) {
       console.error("Error deleting resource:", error);
-
       alert("Failed to delete resource.");
     }
   };
 
-  return (
-    <div className="page-container">
+  const totalQuantity = resources.reduce(
+    (total, resource) => total + Number(resource.quantity || 0),
+    0
+  );
 
-      {/* PAGE HEADER */}
-      <div className="page-header">
+  const categories = new Set(
+    resources.map((resource) => resource.category)
+  ).size;
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "linear-gradient(135deg, #eef6ff 0%, #f8fbff 50%, #eefbf6 100%)",
+        padding: "32px",
+        boxSizing: "border-box",
+      }}
+    >
+      {/* HEADER */}
+      <div
+        style={{
+          maxWidth: "1200px",
+          margin: "0 auto 28px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "20px",
+          flexWrap: "wrap",
+        }}
+      >
         <div>
-          <h1>Resource Management</h1>
-          <p>
-            Manage emergency supplies and resources.
-          </p>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                width: "52px",
+                height: "52px",
+                borderRadius: "16px",
+                background: "linear-gradient(135deg, #2563eb, #0ea5e9)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "26px",
+                boxShadow: "0 10px 25px rgba(37,99,235,0.25)",
+              }}
+            >
+              📦
+            </div>
+
+            <div>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: "32px",
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                Resource Management
+              </h1>
+
+              <p
+                style={{
+                  margin: "5px 0 0",
+                  color: "#64748b",
+                  fontSize: "15px",
+                }}
+              >
+                Manage emergency supplies and resources
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="page-header-actions">
-
+        <div
+          style={{
+            display: "flex",
+            gap: "10px",
+            flexWrap: "wrap",
+          }}
+        >
           <button
-            className="secondary-button"
             onClick={() => navigate("/")}
+            style={{
+              padding: "12px 18px",
+              borderRadius: "12px",
+              border: "1px solid #dbe4ef",
+              background: "white",
+              color: "#334155",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
           >
             ← Dashboard
           </button>
 
           <button
-            className="primary-button"
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => {
+              if (showForm) {
+                resetForm();
+              } else {
+                setShowForm(true);
+              }
+            }}
+            style={{
+              padding: "12px 20px",
+              borderRadius: "12px",
+              border: "none",
+              background:
+                "linear-gradient(135deg, #2563eb, #0ea5e9)",
+              color: "white",
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: "0 8px 20px rgba(37,99,235,0.25)",
+            }}
           >
-            {showForm
-              ? "✕ Close Form"
-              : "+ Add Resource"}
+            {showForm ? "✕ Close Form" : "+ Add Resource"}
           </button>
-
         </div>
       </div>
 
-      {/* ADD RESOURCE FORM */}
-      {showForm && (
-        <div className="form-card">
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        {/* SUMMARY */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(210px, 1fr))",
+            gap: "18px",
+            marginBottom: "25px",
+          }}
+        >
+          <SummaryCard
+            icon="📦"
+            title="Total Resources"
+            value={resources.length}
+            subtitle="Registered items"
+          />
 
-          <h2>Add Resource</h2>
+          <SummaryCard
+            icon="🔢"
+            title="Total Quantity"
+            value={totalQuantity}
+            subtitle="Available units"
+          />
 
-          <form onSubmit={handleSubmit}>
+          <SummaryCard
+            icon="🏷️"
+            title="Categories"
+            value={categories}
+            subtitle="Resource categories"
+          />
+        </div>
 
-            <div className="form-grid">
+        {/* FORM */}
+        {showForm && (
+          <div
+            style={{
+              background: "white",
+              borderRadius: "20px",
+              padding: "28px",
+              marginBottom: "28px",
+              boxShadow: "0 12px 35px rgba(15,23,42,0.08)",
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                color: "#0f172a",
+              }}
+            >
+              {editingId !== null
+                ? "✏️ Edit Resource"
+                : "➕ Add New Resource"}
+            </h2>
 
-              {/* RESOURCE NAME */}
-              <div className="form-group">
-
-                <label>
-                  Resource Name *
-                </label>
-
-                <input
-                  value={form.name}
+            <form onSubmit={handleSubmit}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "18px",
+                }}
+              >
+                <FormInput
+                  label="Resource Name *"
                   placeholder="Example: Drinking Water"
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      name: event.target.value,
-                    })
+                  value={form.name}
+                  onChange={(value) =>
+                    setForm({ ...form, name: value })
                   }
                 />
 
-              </div>
-
-              {/* CATEGORY */}
-              <div className="form-group">
-
-                <label>
-                  Category *
-                </label>
-
-                <input
-                  value={form.category}
+                <FormInput
+                  label="Category *"
                   placeholder="Example: Food"
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      category: event.target.value,
-                    })
+                  value={form.category}
+                  onChange={(value) =>
+                    setForm({ ...form, category: value })
                   }
                 />
 
-              </div>
-
-              {/* QUANTITY */}
-              <div className="form-group">
-
-                <label>
-                  Quantity
-                </label>
-
-                <input
+                <FormInput
+                  label="Quantity"
                   type="number"
-                  min="0"
-                  value={form.quantity}
                   placeholder="Example: 100"
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      quantity: event.target.value,
-                    })
+                  value={form.quantity}
+                  onChange={(value) =>
+                    setForm({ ...form, quantity: value })
                   }
                 />
 
-              </div>
-
-              {/* LOCATION */}
-              <div className="form-group">
-
-                <label>
-                  Location *
-                </label>
-
-                <input
-                  value={form.location}
+                <FormInput
+                  label="Location *"
                   placeholder="Example: Chennai Warehouse"
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      location: event.target.value,
-                    })
+                  value={form.location}
+                  onChange={(value) =>
+                    setForm({ ...form, location: value })
                   }
                 />
-
               </div>
 
-            </div>
-
-            {/* FORM BUTTONS */}
-            <div className="form-actions">
-
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setShowForm(false)}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "12px",
+                  marginTop: "24px",
+                }}
               >
-                Cancel
-              </button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  style={{
+                    padding: "12px 20px",
+                    borderRadius: "10px",
+                    border: "1px solid #cbd5e1",
+                    background: "white",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                  }}
+                >
+                  Cancel
+                </button>
 
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={saving}
-              >
-                {saving
-                  ? "Saving..."
-                  : "Save Resource"}
-              </button>
-
-            </div>
-
-          </form>
-
-        </div>
-      )}
-
-      {/* RESOURCE LIST */}
-      <div className="content-card">
-
-        <div className="content-card-header">
-
-          <div>
-            <h2>Available Resources</h2>
-
-            <p>
-              Emergency resource inventory
-            </p>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  style={{
+                    padding: "12px 22px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: "#2563eb",
+                    color: "white",
+                    cursor: saving ? "not-allowed" : "pointer",
+                    fontWeight: 700,
+                    opacity: saving ? 0.7 : 1,
+                  }}
+                >
+                  {saving
+                    ? "Saving..."
+                    : editingId !== null
+                    ? "Save Changes"
+                    : "Save Resource"}
+                </button>
+              </div>
+            </form>
           </div>
-
-          <span className="count-badge">
-            {resources.length} Resources
-          </span>
-
-        </div>
-
-        {/* LOADING */}
-        {loading ? (
-          <div className="empty-state">
-            <h3>Loading resources...</h3>
-            <p>
-              Please wait while resources are loaded.
-            </p>
-          </div>
-
-        ) : resources.length === 0 ? (
-
-          /* EMPTY */
-          <div className="empty-state">
-
-            <h3>
-              No resources found
-            </h3>
-
-            <p>
-              Add your first emergency resource above.
-            </p>
-
-          </div>
-
-        ) : (
-
-          /* TABLE */
-          <div className="table-container">
-
-            <table>
-
-              <thead>
-
-                <tr>
-                  <th>Name</th>
-                  <th>Category</th>
-                  <th>Quantity</th>
-                  <th>Location</th>
-                  <th>Action</th>
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                {resources.map((resource) => (
-
-                  <tr key={resource.id}>
-
-                    <td>
-                      <strong>
-                        {resource.name}
-                      </strong>
-                    </td>
-
-                    <td>
-                      {resource.category}
-                    </td>
-
-                    <td>
-                      {resource.quantity}
-                    </td>
-
-                    <td>
-                      📍 {resource.location}
-                    </td>
-
-                    <td>
-
-                      <button
-                        className="delete-button"
-                        onClick={() =>
-                          deleteResource(
-                            resource.id,
-                            resource.name
-                          )
-                        }
-                      >
-                        Delete
-                      </button>
-
-                    </td>
-
-                  </tr>
-
-                ))}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
         )}
 
+        {/* RESOURCE LIST */}
+        <div
+          style={{
+            background: "rgba(255,255,255,0.85)",
+            borderRadius: "22px",
+            padding: "25px",
+            border: "1px solid #e2e8f0",
+            boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "22px",
+              gap: "15px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  color: "#0f172a",
+                }}
+              >
+                Available Resources
+              </h2>
+
+              <p
+                style={{
+                  margin: "5px 0 0",
+                  color: "#64748b",
+                }}
+              >
+                Emergency resource inventory
+              </p>
+            </div>
+
+            <div
+              style={{
+                background: "#dbeafe",
+                color: "#1d4ed8",
+                padding: "8px 14px",
+                borderRadius: "999px",
+                fontWeight: 700,
+                fontSize: "14px",
+              }}
+            >
+              {resources.length} Resources
+            </div>
+          </div>
+
+          {loading ? (
+            <EmptyState
+              icon="⏳"
+              title="Loading resources..."
+              message="Please wait while resources are loaded."
+            />
+          ) : resources.length === 0 ? (
+            <EmptyState
+              icon="📦"
+              title="No resources found"
+              message="Add your first emergency resource above."
+            />
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: "20px",
+              }}
+            >
+              {resources.map((resource) => (
+                <div
+                  key={resource.id}
+                  style={{
+                    background: "white",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "18px",
+                    padding: "20px",
+                    boxShadow:
+                      "0 8px 20px rgba(15,23,42,0.06)",
+                    transition: "transform 0.2s",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "22px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        📦
+                      </div>
+
+                      <h3
+                        style={{
+                          margin: 0,
+                          color: "#0f172a",
+                          fontSize: "19px",
+                        }}
+                      >
+                        {resource.name}
+                      </h3>
+                    </div>
+
+                    <span
+                      style={{
+                        height: "fit-content",
+                        background: "#eff6ff",
+                        color: "#2563eb",
+                        padding: "6px 10px",
+                        borderRadius: "999px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {resource.category}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "20px",
+                      padding: "14px",
+                      background: "#f8fafc",
+                      borderRadius: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#64748b",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      AVAILABLE QUANTITY
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "28px",
+                        fontWeight: 800,
+                        color:
+                          resource.quantity > 0
+                            ? "#16a34a"
+                            : "#dc2626",
+                        marginTop: "3px",
+                      }}
+                    >
+                      {resource.quantity}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "16px",
+                      color: "#475569",
+                      fontSize: "14px",
+                    }}
+                  >
+                    📍 {resource.location}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "9px",
+                      marginTop: "18px",
+                    }}
+                  >
+                    <button
+                      onClick={() => editResource(resource)}
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: "9px",
+                        border: "1px solid #bfdbfe",
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        deleteResource(
+                          resource.id,
+                          resource.name
+                        )
+                      }
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: "9px",
+                        border: "1px solid #fecaca",
+                        background: "#fef2f2",
+                        color: "#dc2626",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  icon,
+  title,
+  value,
+  subtitle,
+}: {
+  icon: string;
+  title: string;
+  value: number;
+  subtitle: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "white",
+        borderRadius: "18px",
+        padding: "20px",
+        border: "1px solid #e2e8f0",
+        boxShadow: "0 8px 25px rgba(15,23,42,0.06)",
+      }}
+    >
+      <div style={{ fontSize: "25px" }}>{icon}</div>
+
+      <div
+        style={{
+          marginTop: "12px",
+          color: "#64748b",
+          fontSize: "13px",
+          fontWeight: 700,
+        }}
+      >
+        {title}
       </div>
 
+      <div
+        style={{
+          marginTop: "3px",
+          fontSize: "30px",
+          fontWeight: 800,
+          color: "#0f172a",
+        }}
+      >
+        {value}
+      </div>
+
+      <div
+        style={{
+          marginTop: "3px",
+          color: "#94a3b8",
+          fontSize: "12px",
+        }}
+      >
+        {subtitle}
+      </div>
+    </div>
+  );
+}
+
+function FormInput({
+  label,
+  placeholder,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
+  return (
+    <div>
+      <label
+        style={{
+          display: "block",
+          marginBottom: "7px",
+          fontWeight: 700,
+          color: "#334155",
+          fontSize: "14px",
+        }}
+      >
+        {label}
+      </label>
+
+      <input
+        type={type}
+        min={type === "number" ? "0" : undefined}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "12px 13px",
+          borderRadius: "10px",
+          border: "1px solid #cbd5e1",
+          outline: "none",
+          fontSize: "14px",
+        }}
+      />
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  message,
+}: {
+  icon: string;
+  title: string;
+  message: string;
+}) {
+  return (
+    <div
+      style={{
+        textAlign: "center",
+        padding: "55px 20px",
+        color: "#64748b",
+      }}
+    >
+      <div style={{ fontSize: "45px" }}>{icon}</div>
+
+      <h3
+        style={{
+          margin: "12px 0 6px",
+          color: "#334155",
+        }}
+      >
+        {title}
+      </h3>
+
+      <p style={{ margin: 0 }}>{message}</p>
     </div>
   );
 }
 
 export default Resources;
+
