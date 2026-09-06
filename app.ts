@@ -9,7 +9,6 @@ import reliefCampRoutes from "./routes/reliefCampRoutes";
 import resourceRoutes from "./routes/resourceRoutes";
 import alertRoutes from "./routes/alertRoutes";
 
-
 dotenv.config();
 
 const app = express();
