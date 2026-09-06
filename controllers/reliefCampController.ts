@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import pool from "../db/database";
 
-// Get all relief camps
+// GET ALL RELIEF CAMPS
 export const getReliefCamps = async (
   _req: Request,
   res: Response
@@ -32,8 +32,7 @@ export const getReliefCamps = async (
   }
 };
 
-
-// Create a new relief camp
+// CREATE RELIEF CAMP
 export const createReliefCamp = async (
   req: Request,
   res: Response
@@ -51,7 +50,7 @@ export const createReliefCamp = async (
 
     if (!name || !location) {
       return res.status(400).json({
-        message: "Camp name and location are required",
+        message: "Name and location are required",
       });
     }
 
@@ -69,16 +68,7 @@ export const createReliefCamp = async (
         )
       VALUES
         ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING
-        id,
-        name,
-        location,
-        latitude,
-        longitude,
-        capacity,
-        current_people,
-        status,
-        created_at
+      RETURNING *
       `,
       [
         name,
@@ -101,8 +91,73 @@ export const createReliefCamp = async (
   }
 };
 
+// UPDATE / EDIT RELIEF CAMP
+export const updateReliefCamp = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const { id } = req.params;
 
-// Delete a relief camp
+    const {
+      name,
+      location,
+      latitude,
+      longitude,
+      capacity,
+      current_people,
+      status,
+    } = req.body;
+
+    if (!name || !location) {
+      return res.status(400).json({
+        message: "Name and location are required",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE relief_camps
+      SET
+        name = $1,
+        location = $2,
+        latitude = $3,
+        longitude = $4,
+        capacity = $5,
+        current_people = $6,
+        status = $7
+      WHERE id = $8
+      RETURNING *
+      `,
+      [
+        name,
+        location,
+        latitude || null,
+        longitude || null,
+        capacity || 0,
+        current_people || 0,
+        status || "active",
+        id,
+      ]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message: "Relief camp not found",
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating relief camp:", error);
+
+    res.status(500).json({
+      message: "Failed to update relief camp",
+    });
+  }
+};
+
+// DELETE RELIEF CAMP
 export const deleteReliefCamp = async (
   req: Request,
   res: Response
@@ -111,7 +166,11 @@ export const deleteReliefCamp = async (
     const { id } = req.params;
 
     const result = await pool.query(
-      "DELETE FROM relief_camps WHERE id = $1 RETURNING id",
+      `
+      DELETE FROM relief_camps
+      WHERE id = $1
+      RETURNING id
+      `,
       [id]
     );
 
