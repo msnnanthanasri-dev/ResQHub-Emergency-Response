@@ -1,6 +1,6 @@
-import type{ FormEvent } from "react";
+
+import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 interface ReliefCamp {
   id: number;
@@ -13,40 +13,37 @@ interface ReliefCamp {
   status: string;
 }
 
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 function ReliefCamps() {
-  const navigate = useNavigate();
-
   const [camps, setCamps] = useState<ReliefCamp[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({
-    name: "",
-    location: "",
-    latitude: "",
-    longitude: "",
-    capacity: "",
-    current_people: "",
-    status: "active",
-  });
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [capacity, setCapacity] = useState("");
+  const [currentPeople, setCurrentPeople] = useState("");
+  const [status, setStatus] = useState("active");
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const loadCamps = async () => {
     try {
       const response = await fetch(
-        "http://localhost:5000/api/relief-camps"
+        `${API_URL}/api/relief-camps`
       );
 
       if (!response.ok) {
-        throw new Error("Failed to load camps");
+        throw new Error("Failed to load relief camps");
       }
 
       const data = await response.json();
       setCamps(data);
     } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
+      console.error("Error loading relief camps:", error);
     }
   };
 
@@ -54,326 +51,893 @@ function ReliefCamps() {
     loadCamps();
   }, []);
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
+  const resetForm = () => {
+    setName("");
+    setLocation("");
+    setLatitude("");
+    setLongitude("");
+    setCapacity("");
+    setCurrentPeople("");
+    setStatus("active");
+    setEditingId(null);
+  };
 
-    if (!form.name || !form.location) {
-      alert("Please enter camp name and location.");
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+
+    if (!name.trim() || !location.trim()) {
+      alert("Please enter the camp name and location.");
       return;
     }
 
-    setSaving(true);
+    const campData = {
+      name: name.trim(),
+      location: location.trim(),
+      latitude: latitude.trim()
+        ? Number(latitude)
+        : null,
+      longitude: longitude.trim()
+        ? Number(longitude)
+        : null,
+      capacity: capacity.trim()
+        ? Number(capacity)
+        : 0,
+      current_people: currentPeople.trim()
+        ? Number(currentPeople)
+        : 0,
+      status,
+    };
+
+    const isEditing = editingId !== null;
+
+    const url = isEditing
+      ? `${API_URL}/api/relief-camps/${editingId}`
+      : `${API_URL}/api/relief-camps`;
+
+    const method = isEditing ? "PUT" : "POST";
 
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/relief-camps",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: form.name,
-            location: form.location,
-            latitude: form.latitude
-              ? Number(form.latitude)
-              : null,
-            longitude: form.longitude
-              ? Number(form.longitude)
-              : null,
-            capacity: form.capacity
-              ? Number(form.capacity)
-              : 0,
-            current_people: form.current_people
-              ? Number(form.current_people)
-              : 0,
-            status: form.status,
-          }),
-        }
-      );
+      setLoading(true);
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to add camp");
-      }
-
-      alert("Relief camp added successfully!");
-
-      setForm({
-        name: "",
-        location: "",
-        latitude: "",
-        longitude: "",
-        capacity: "",
-        current_people: "",
-        status: "active",
+      console.log("Sending request:", {
+        url,
+        method,
+        campData,
       });
 
-      setShowForm(false);
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(campData),
+      });
+
+      const responseText = await response.text();
+
+      console.log(
+        "Response status:",
+        response.status
+      );
+      console.log(
+        "Response:",
+        responseText
+      );
+
+      if (!response.ok) {
+        alert(
+          `Server error (${response.status})\n\n${responseText}`
+        );
+        return;
+      }
+
+      alert(
+        isEditing
+          ? "Relief camp updated successfully!"
+          : "Relief camp added successfully!"
+      );
+
+      resetForm();
+
       await loadCamps();
     } catch (error) {
-      console.error(error);
-      alert("Failed to add relief camp.");
+      console.error(
+        "Error saving relief camp:",
+        error
+      );
+
+      alert(
+        `Could not connect to the backend.\n\n${error}`
+      );
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
-  const deleteCamp = async (id: number, name: string) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete ${name}?`
+  const handleEdit = (camp: ReliefCamp) => {
+    setEditingId(camp.id);
+
+    setName(camp.name);
+    setLocation(camp.location);
+
+    setLatitude(
+      camp.latitude !== null
+        ? String(camp.latitude)
+        : ""
     );
 
-    if (!confirmed) return;
+    setLongitude(
+      camp.longitude !== null
+        ? String(camp.longitude)
+        : ""
+    );
+
+    setCapacity(String(camp.capacity));
+
+    setCurrentPeople(
+      String(camp.current_people)
+    );
+
+    setStatus(camp.status);
+  };
+
+  const handleDelete = async (id: number) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this relief camp?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/relief-camps/${id}`,
+        `${API_URL}/api/relief-camps/${id}`,
         {
           method: "DELETE",
         }
       );
 
-      const data = await response.json();
+      const responseText =
+        await response.text();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to delete camp");
+        alert(
+          `Delete failed (${response.status})\n\n${responseText}`
+        );
+        return;
       }
 
-      alert("Relief camp deleted successfully!");
+      alert(
+        "Relief camp deleted successfully!"
+      );
+
       await loadCamps();
     } catch (error) {
-      console.error(error);
-      alert("Failed to delete relief camp.");
+      console.error(
+        "Error deleting relief camp:",
+        error
+      );
+
+      alert(
+        `Could not connect to backend.\n\n${error}`
+      );
     }
   };
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1>Relief Camp Management</h1>
-          <p>Manage emergency relief camps and occupancy.</p>
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "linear-gradient(135deg, #f8fafc, #eef2ff)",
+        padding: "35px",
+        fontFamily:
+          "Arial, Helvetica, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "1200px",
+          margin: "0 auto",
+        }}
+      >
+        {/* HEADER */}
+        <div
+          style={{
+            marginBottom: "30px",
+          }}
+        >
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "34px",
+              color: "#111827",
+            }}
+          >
+            Relief Camps
+          </h1>
+
+          <p
+            style={{
+              marginTop: "8px",
+              color: "#6b7280",
+              fontSize: "16px",
+            }}
+          >
+            Manage emergency shelters,
+            capacity and occupancy.
+          </p>
         </div>
 
-        <div className="page-header-actions">
-          <button
-            className="secondary-button"
-            onClick={() => navigate("/")}
+        {/* FORM CARD */}
+        <div
+          style={{
+            background: "white",
+            borderRadius: "18px",
+            padding: "28px",
+            marginBottom: "35px",
+            boxShadow:
+              "0 10px 30px rgba(0,0,0,0.08)",
+            border: "1px solid #e5e7eb",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              marginBottom: "22px",
+            }}
           >
-            ← Dashboard
-          </button>
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  color: "#111827",
+                  fontSize: "22px",
+                }}
+              >
+                {editingId !== null
+                  ? "Edit Relief Camp"
+                  : "Add Relief Camp"}
+              </h2>
 
-          <button
-            className="primary-button"
-            onClick={() => setShowForm(!showForm)}
-          >
-            {showForm ? "✕ Close Form" : "+ Add Relief Camp"}
-          </button>
-        </div>
-      </div>
+              <p
+                style={{
+                  margin:
+                    "6px 0 0 0",
+                  color: "#6b7280",
+                  fontSize: "14px",
+                }}
+              >
+                {editingId !== null
+                  ? "Update the camp information below."
+                  : "Enter the details of a new relief camp."}
+              </p>
+            </div>
 
-      {showForm && (
-        <div className="form-card">
-          <h2>Add Relief Camp</h2>
+            {editingId !== null && (
+              <span
+                style={{
+                  background: "#fff7ed",
+                  color: "#c2410c",
+                  padding:
+                    "7px 12px",
+                  borderRadius: "20px",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                }}
+              >
+                Editing
+              </span>
+            )}
+          </div>
 
           <form onSubmit={handleSubmit}>
-            <div className="form-grid">
-              <div className="form-group">
-                <label>Camp Name *</label>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(230px, 1fr))",
+                gap: "18px",
+              }}
+            >
+              {/* CAMP NAME */}
+              <div>
+                <label
+                  style={labelStyle}
+                >
+                  Camp Name
+                </label>
+
                 <input
-                  value={form.name}
-                  placeholder="Example: Chennai Relief Camp"
+                  style={inputStyle}
+                  type="text"
+                  placeholder="e.g. Anna Nagar Relief Camp"
+                  value={name}
                   onChange={(e) =>
-                    setForm({ ...form, name: e.target.value })
+                    setName(e.target.value)
                   }
                 />
               </div>
 
-              <div className="form-group">
-                <label>Location *</label>
+              {/* LOCATION */}
+              <div>
+                <label
+                  style={labelStyle}
+                >
+                  Location
+                </label>
+
                 <input
-                  value={form.location}
-                  placeholder="Example: Velachery"
+                  style={inputStyle}
+                  type="text"
+                  placeholder="e.g. Chennai"
+                  value={location}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      location: e.target.value,
-                    })
+                    setLocation(
+                      e.target.value
+                    )
                   }
                 />
               </div>
 
-              <div className="form-group">
-                <label>Latitude</label>
-                <input
-                  value={form.latitude}
-                  placeholder="Example: 13.0827"
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      latitude: e.target.value,
-                    })
-                  }
-                />
-              </div>
+              {/* LATITUDE */}
+              <div>
+                <label
+                  style={labelStyle}
+                >
+                  Latitude
+                </label>
 
-              <div className="form-group">
-                <label>Longitude</label>
                 <input
-                  value={form.longitude}
-                  placeholder="Example: 80.2707"
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      longitude: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Capacity</label>
-                <input
+                  style={inputStyle}
                   type="number"
-                  value={form.capacity}
-                  placeholder="Example: 500"
+                  step="any"
+                  placeholder="e.g. 13.0827"
+                  value={latitude}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      capacity: e.target.value,
-                    })
+                    setLatitude(
+                      e.target.value
+                    )
                   }
                 />
               </div>
 
-              <div className="form-group">
-                <label>Current People</label>
+              {/* LONGITUDE */}
+              <div>
+                <label
+                  style={labelStyle}
+                >
+                  Longitude
+                </label>
+
                 <input
+                  style={inputStyle}
                   type="number"
-                  value={form.current_people}
-                  placeholder="Example: 100"
+                  step="any"
+                  placeholder="e.g. 80.2707"
+                  value={longitude}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      current_people: e.target.value,
-                    })
+                    setLongitude(
+                      e.target.value
+                    )
                   }
                 />
               </div>
 
-              <div className="form-group">
-                <label>Status</label>
+              {/* CAPACITY */}
+              <div>
+                <label
+                  style={labelStyle}
+                >
+                  Total Capacity
+                </label>
+
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 500"
+                  value={capacity}
+                  onChange={(e) =>
+                    setCapacity(
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+
+              {/* CURRENT PEOPLE */}
+              <div>
+                <label
+                  style={labelStyle}
+                >
+                  Current People
+                </label>
+
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 250"
+                  value={currentPeople}
+                  onChange={(e) =>
+                    setCurrentPeople(
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+
+              {/* STATUS */}
+              <div>
+                <label
+                  style={labelStyle}
+                >
+                  Camp Status
+                </label>
+
                 <select
-                  value={form.status}
+                  style={inputStyle}
+                  value={status}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      status: e.target.value,
-                    })
+                    setStatus(
+                      e.target.value
+                    )
                   }
                 >
-                  <option value="active">Active</option>
-                  <option value="full">Full</option>
-                  <option value="closed">Closed</option>
+                  <option value="active">
+                    Active
+                  </option>
+
+                  <option value="full">
+                    Full
+                  </option>
+
+                  <option value="closed">
+                    Closed
+                  </option>
                 </select>
               </div>
             </div>
 
-            <div className="form-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setShowForm(false)}
-              >
-                Cancel
-              </button>
-
+            {/* BUTTONS */}
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                marginTop: "25px",
+              }}
+            >
               <button
                 type="submit"
-                className="primary-button"
-                disabled={saving}
+                disabled={loading}
+                style={{
+                  background:
+                    loading
+                      ? "#9ca3af"
+                      : "#2563eb",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding:
+                    "12px 24px",
+                  fontSize: "15px",
+                  fontWeight: "bold",
+                  cursor: loading
+                    ? "not-allowed"
+                    : "pointer",
+                  boxShadow:
+                    "0 4px 12px rgba(37,99,235,0.25)",
+                }}
               >
-                {saving ? "Saving..." : "Save Camp"}
+                {loading
+                  ? "Saving..."
+                  : editingId !== null
+                  ? "✓ Save Changes"
+                  : "+ Add Relief Camp"}
               </button>
+
+              {editingId !== null && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  disabled={loading}
+                  style={{
+                    background: "#f3f4f6",
+                    color: "#374151",
+                    border:
+                      "1px solid #d1d5db",
+                    borderRadius: "10px",
+                    padding:
+                      "12px 22px",
+                    fontSize: "15px",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </form>
         </div>
-      )}
 
-      <div className="content-card">
-        <div className="content-card-header">
+        {/* LIST HEADER */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            marginBottom: "18px",
+          }}
+        >
           <div>
-            <h2>Registered Relief Camps</h2>
-            <p>Emergency shelter and relief camp database</p>
-          </div>
+            <h2
+              style={{
+                margin: 0,
+                color: "#111827",
+              }}
+            >
+              Registered Relief Camps
+            </h2>
 
-          <span className="count-badge">
-            {camps.length} Camps
-          </span>
+            <p
+              style={{
+                margin:
+                  "5px 0 0 0",
+                color: "#6b7280",
+              }}
+            >
+              {camps.length} camp
+              {camps.length !== 1
+                ? "s"
+                : ""} registered
+            </p>
+          </div>
         </div>
 
-        {loading ? (
-          <div className="empty-state">Loading camps...</div>
-        ) : camps.length === 0 ? (
-          <div className="empty-state">
-            <h3>No relief camps found</h3>
-            <p>Add your first relief camp above.</p>
+        {/* CAMPS */}
+        {camps.length === 0 ? (
+          <div
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              padding: "45px",
+              textAlign: "center",
+              border:
+                "1px solid #e5e7eb",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "42px",
+                marginBottom: "10px",
+              }}
+            >
+              🏕️
+            </div>
+
+            <h3
+              style={{
+                margin: "0 0 8px 0",
+                color: "#374151",
+              }}
+            >
+              No Relief Camps
+            </h3>
+
+            <p
+              style={{
+                margin: 0,
+                color: "#6b7280",
+              }}
+            >
+              Add your first relief camp
+              using the form above.
+            </p>
           </div>
         ) : (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Location</th>
-                  <th>Capacity</th>
-                  <th>People</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: "20px",
+            }}
+          >
+            {camps.map((camp) => {
+              const occupancy =
+                camp.capacity > 0
+                  ? Math.round(
+                      (camp.current_people /
+                        camp.capacity) *
+                        100
+                    )
+                  : 0;
 
-              <tbody>
-                {camps.map((camp) => (
-                  <tr key={camp.id}>
-                    <td>
-                      <strong>{camp.name}</strong>
-                      <small>
-                        CAMP-
-                        {String(camp.id).padStart(3, "0")}
-                      </small>
-                    </td>
+              return (
+                <div
+                  key={camp.id}
+                  style={{
+                    background: "white",
+                    borderRadius: "16px",
+                    padding: "23px",
+                    border:
+                      "1px solid #e5e7eb",
+                    boxShadow:
+                      "0 6px 20px rgba(0,0,0,0.06)",
+                  }}
+                >
+                  {/* CARD TOP */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      alignItems:
+                        "flex-start",
+                      gap: "10px",
+                    }}
+                  >
+                    <div>
+                      <h3
+                        style={{
+                          margin:
+                            "0 0 7px 0",
+                          fontSize: "20px",
+                          color: "#111827",
+                        }}
+                      >
+                        {camp.name}
+                      </h3>
 
-                    <td>📍 {camp.location}</td>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#6b7280",
+                          fontSize: "14px",
+                        }}
+                      >
+                        📍 {camp.location}
+                      </p>
+                    </div>
 
-                    <td>{camp.capacity}</td>
+                    <span
+                      style={{
+                        padding:
+                          "6px 10px",
+                        borderRadius:
+                          "20px",
+                        fontSize: "12px",
+                        fontWeight:
+                          "bold",
+                        background:
+                          camp.status ===
+                          "active"
+                            ? "#dcfce7"
+                            : camp.status ===
+                              "full"
+                            ? "#fef3c7"
+                            : "#fee2e2",
+                        color:
+                          camp.status ===
+                          "active"
+                            ? "#166534"
+                            : camp.status ===
+                              "full"
+                            ? "#92400e"
+                            : "#991b1b",
+                      }}
+                    >
+                      {camp.status
+                        .charAt(0)
+                        .toUpperCase() +
+                        camp.status.slice(1)}
+                    </span>
+                  </div>
 
-                    <td>{camp.current_people}</td>
-
-                    <td>
+                  {/* CAPACITY */}
+                  <div
+                    style={{
+                      marginTop: "20px",
+                      background: "#f8fafc",
+                      borderRadius: "12px",
+                      padding: "15px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "space-between",
+                        marginBottom:
+                          "8px",
+                      }}
+                    >
                       <span
-                        className={`status ${camp.status.toLowerCase()}`}
+                        style={{
+                          color: "#6b7280",
+                          fontSize: "13px",
+                        }}
                       >
-                        {camp.status}
+                        Occupancy
                       </span>
-                    </td>
 
-                    <td>
-                      <button
-                        className="delete-button"
-                        onClick={() =>
-                          deleteCamp(camp.id, camp.name)
-                        }
+                      <strong
+                        style={{
+                          color: "#111827",
+                        }}
                       >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        {
+                          camp.current_people
+                        }{" "}
+                        / {camp.capacity}
+                      </strong>
+                    </div>
+
+                    <div
+                      style={{
+                        height: "8px",
+                        background:
+                          "#e5e7eb",
+                        borderRadius:
+                          "10px",
+                        overflow:
+                          "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(
+                            occupancy,
+                            100
+                          )}%`,
+                          height: "100%",
+                          background:
+                            occupancy >= 90
+                              ? "#dc2626"
+                              : occupancy >=
+                                70
+                              ? "#f59e0b"
+                              : "#22c55e",
+                          borderRadius:
+                            "10px",
+                        }}
+                      />
+                    </div>
+
+                    <p
+                      style={{
+                        margin:
+                          "7px 0 0 0",
+                        fontSize: "12px",
+                        color: "#6b7280",
+                      }}
+                    >
+                      {occupancy}% occupied
+                    </p>
+                  </div>
+
+                  {/* LOCATION DETAILS */}
+                  <div
+                    style={{
+                      marginTop: "17px",
+                      display: "grid",
+                      gridTemplateColumns:
+                        "1fr 1fr",
+                      gap: "10px",
+                      fontSize: "13px",
+                    }}
+                  >
+                    <div>
+                      <span
+                        style={{
+                          color: "#9ca3af",
+                        }}
+                      >
+                        Latitude
+                      </span>
+
+                      <div
+                        style={{
+                          color: "#374151",
+                          fontWeight:
+                            "bold",
+                        }}
+                      >
+                        {camp.latitude ??
+                          "N/A"}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span
+                        style={{
+                          color: "#9ca3af",
+                        }}
+                      >
+                        Longitude
+                      </span>
+
+                      <div
+                        style={{
+                          color: "#374151",
+                          fontWeight:
+                            "bold",
+                        }}
+                      >
+                        {camp.longitude ??
+                          "N/A"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ACTION BUTTONS */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      marginTop: "20px",
+                    }}
+                  >
+                    <button
+                      onClick={() =>
+                        handleEdit(camp)
+                      }
+                      style={{
+                        flex: 1,
+                        background:
+                          "#eff6ff",
+                        color: "#1d4ed8",
+                        border:
+                          "1px solid #bfdbfe",
+                        borderRadius: "9px",
+                        padding:
+                          "10px 15px",
+                        fontWeight:
+                          "bold",
+                        cursor:
+                          "pointer",
+                        fontSize: "14px",
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        handleDelete(
+                          camp.id
+                        )
+                      }
+                      style={{
+                        flex: 1,
+                        background:
+                          "#fef2f2",
+                        color: "#dc2626",
+                        border:
+                          "1px solid #fecaca",
+                        borderRadius: "9px",
+                        padding:
+                          "10px 15px",
+                        fontWeight:
+                          "bold",
+                        cursor:
+                          "pointer",
+                        fontSize: "14px",
+                      }}
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -381,4 +945,24 @@ function ReliefCamps() {
   );
 }
 
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  marginBottom: "7px",
+  fontSize: "14px",
+  fontWeight: "bold",
+  color: "#374151",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "12px 13px",
+  border: "1px solid #d1d5db",
+  borderRadius: "9px",
+  fontSize: "14px",
+  outline: "none",
+  background: "#ffffff",
+};
+
 export default ReliefCamps;
+
